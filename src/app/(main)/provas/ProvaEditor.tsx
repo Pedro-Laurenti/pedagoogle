@@ -44,11 +44,22 @@ function EnunciadoPreview({ html }: { html: string }) {
   useEffect(() => {
     if (!ref.current) return;
     const el = ref.current;
-    // Use KaTeX auto-render to scan all text nodes for $...$ patterns — works regardless of
-    // how Tiptap serializes math (plain text delimiters or data-type span nodes)
+
+    // 1. Render Tiptap math nodes: <span data-type="inline-math" data-latex="...">
+    //    and <div data-type="block-math" data-latex="...">
+    el.querySelectorAll<HTMLElement>("[data-type='inline-math'], [data-type='block-math']").forEach((node) => {
+      const latex = node.getAttribute("data-latex") ?? "";
+      const display = node.getAttribute("data-type") === "block-math";
+      try {
+        import("katex").then(({ default: katex }) => {
+          node.innerHTML = katex.renderToString(latex, { displayMode: display, throwOnError: false });
+        });
+      } catch { /* ignore */ }
+    });
+
+    // 2. Also handle legacy $...$ plain-text math (old DB entries)
     import("katex/contrib/auto-render").then((mod) => {
-      const renderMathInElement = mod.default;
-      renderMathInElement(el, {
+      mod.default(el, {
         delimiters: [
           { left: "$$", right: "$$", display: true },
           { left: "$", right: "$", display: false },
@@ -58,7 +69,7 @@ function EnunciadoPreview({ html }: { html: string }) {
     });
   }, [html]);
 
-  return <div ref={ref} className="preview-enunciado inline" dangerouslySetInnerHTML={{ __html: html }} />;
+  return <div ref={ref} className="preview-enunciado" dangerouslySetInnerHTML={{ __html: html }} />;
 }
 
 function renderBlanks(text: string) {
@@ -95,7 +106,10 @@ function PreviewProva({ form, questoes, materias }: { form: ProvaForm; questoes:
       <ol className="space-y-4">
         {questoes.map((q, i) => (
           <li key={q.id ?? q.tempId ?? i}>
-            <div className="font-semibold">{i + 1}.{" "}{q.tipo === "completar_lacunas" ? renderBlanks(q.enunciado) : <EnunciadoPreview html={q.enunciado} />}{" "}<span className="font-normal text-gray-500 text-xs">({q.valor} pt)</span></div>
+            <div className="font-semibold mb-1">
+              {i + 1}.{" "}<span className="font-normal text-gray-500 text-xs">({q.valor} pt)</span>
+            </div>
+            <div className="mb-1">{q.tipo === "completar_lacunas" ? renderBlanks(q.enunciado) : <EnunciadoPreview html={q.enunciado} />}</div>
             {q.tipo === "multipla_escolha" && (
               <ul className="mt-1 ml-4 space-y-1">
                 {q.opcoes.map((o, j) => (

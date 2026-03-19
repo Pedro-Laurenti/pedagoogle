@@ -208,7 +208,10 @@ export default function RichEditor({ value, onChange, placeholder, minHeight = 1
   }, [value, editor]);
 
   const insertMath = useCallback((latex: string) => {
-    editor?.chain().focus().insertContent(`$${latex}$`).run();
+    // Use insertInlineMath command so the content is stored as a proper Tiptap node:
+    // <span data-type="inline-math" data-latex="..."> — which the Rust export pipeline reads correctly.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (editor?.chain().focus() as any).insertInlineMath({ latex }).run();
   }, [editor]);
 
   async function insertImageFromFile() {

@@ -29,54 +29,76 @@ pub enum Block {
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Align { Left, Center, Right }
 
-/// Convert $...$ inline math LaTeX into a human-readable Unicode approximation.
-/// For export purposes we show the LaTeX source wrapped in angle brackets so
-/// users know it was a formula, e.g.: ⟨x² + 1⟩
+/// Convert $...$ inline math LaTeX into a human-readable Unicode approximation for text export.
 pub fn latex_to_display(latex: &str) -> String {
-    let s = latex.trim();
-    // Apply common simple substitutions for a readable fallback
-    let s = s.replace("\\frac{", "").replace("}{", "÷(").replace("}", ")");
+    let s = latex.trim().to_string();
+
+    // \frac{a}{b} → (a/b) — handle one level of nesting
+    let re_frac = Regex::new(r"\\frac\{([^{}]*)\}\{([^{}]*)\}").unwrap();
+    let mut s = re_frac.replace_all(&s, "($1/$2)").to_string();
+    // Apply repeatedly for adjacent fracs
+    while re_frac.is_match(&s) {
+        s = re_frac.replace_all(&s, "($1/$2)").to_string();
+    }
+
+    // \sqrt{x} → √(x), \sqrt x → √
+    let re_sqrt = Regex::new(r"\\sqrt\{([^{}]*)\}").unwrap();
+    let s = re_sqrt.replace_all(&s, "√($1)").to_string();
     let s = s.replace("\\sqrt", "√");
-    let s = s.replace("\\pi", "π");
-    let s = s.replace("\\infty", "∞");
+
+    // Symbols — longer names first to avoid partial replacement
+    let s = s.replace("\\Leftrightarrow", "⟺");
+    let s = s.replace("\\rightarrow", "→");
+    let s = s.replace("\\leftarrow", "←");
+    let s = s.replace("\\notin", "∉");
     let s = s.replace("\\Delta", "Δ");
+    let s = s.replace("\\Sigma", "Σ");
     let s = s.replace("\\alpha", "α");
     let s = s.replace("\\beta", "β");
     let s = s.replace("\\gamma", "γ");
     let s = s.replace("\\theta", "θ");
     let s = s.replace("\\sigma", "σ");
-    let s = s.replace("\\mu", "μ");
     let s = s.replace("\\lambda", "λ");
     let s = s.replace("\\omega", "ω");
+    let s = s.replace("\\mu", "μ");
+    let s = s.replace("\\pi", "π");
+    let s = s.replace("\\infty", "∞");
+    let s = s.replace("\\approx", "≈");
     let s = s.replace("\\neq", "≠");
     let s = s.replace("\\leq", "≤");
     let s = s.replace("\\geq", "≥");
     let s = s.replace("\\in", "∈");
-    let s = s.replace("\\notin", "∉");
-    let s = s.replace("\\rightarrow", "→");
-    let s = s.replace("\\leftarrow", "←");
-    let s = s.replace("\\Leftrightarrow", "⟺");
     let s = s.replace("\\times", "×");
     let s = s.replace("\\div", "÷");
     let s = s.replace("\\cdot", "·");
     let s = s.replace("\\pm", "±");
     let s = s.replace("\\sum", "Σ");
     let s = s.replace("\\int", "∫");
+    let s = s.replace("\\angle", "∠");
+    let s = s.replace("\\circ", "°");
     let s = s.replace("\\lim", "lim");
     let s = s.replace("\\log", "log");
     let s = s.replace("\\ln", "ln");
-    let s = s.replace("\\vec{", "").replace("\\angle", "∠");
-    let s = s.replace("\\circ", "°");
-    let s = s.replace("\\bar{", "");
-    let s = s.replace("\\begin{cases}", "[").replace("\\end{cases}", "]");
-    let s = s.replace("\\\\", " ; ");
-    let s = s.replace("_{", "_(").replace("^{", "^(");
+    let s = s.replace("\\begin{cases}", "{").replace("\\end{cases}", "}");
+    let s = s.replace("\\\\", "; ");
     let s = s.replace("\\,", " ").replace("\\ ", " ");
+
+    // ^{expr} → ^expr  and _{expr} → _expr  (strip braces from exponents)
+    let re_sup = Regex::new(r"\^\{([^{}]+)\}").unwrap();
+    let s = re_sup.replace_all(&s, "^$1").to_string();
+    let re_sub = Regex::new(r"_\{([^{}]+)\}").unwrap();
+    let s = re_sub.replace_all(&s, "_$1").to_string();
+
+    // Remove remaining LaTeX commands (\word)
     let s = Regex::new(r"\\[a-zA-Z]+").unwrap().replace_all(&s, "").to_string();
-    // Clean up leftover braces
+
+    // Clean up remaining stray braces
     let s = s.replace('{', "(").replace('}', ")");
-    // Wrap in special brackets to mark it as formula
-    format!("⟨{}⟩", s.trim())
+
+    // Collapse multiple spaces
+    let s = Regex::new(r" {2,}").unwrap().replace_all(s.trim(), " ").to_string();
+
+    s
 }
 
 /// Split raw text by $...$ math regions and produce spans
@@ -112,6 +134,17 @@ fn collect_spans(el: ElementRef, bold: bool, italic: bool, underline: bool) -> V
             }
             Node::Element(e) => {
                 let tag = e.name();
+                // Tiptap Mathematics extension stores LaTeX in data-latex attribute.
+                // <span data-type="inline-math" data-latex="..."> for inline math
+                // <div  data-type="block-math"  data-latex="..."> for display math
+                let data_type = e.attr("data-type").unwrap_or("");
+                if data_type == "inline-math" || data_type == "block-math" {
+                    if let Some(latex) = e.attr("data-latex") {
+                        let rendered = latex_to_display(latex);
+                        spans.push(TextSpan { text: rendered, bold: true, italic: false, underline: false });
+                    }
+                    continue;
+                }
                 let child_ref = ElementRef::wrap(child).unwrap();
                 let (cb, ci, cu) = (
                     bold || matches!(tag, "strong" | "b"),
@@ -137,13 +170,25 @@ fn parse_blocks(html: &str) -> Vec<Block> {
     let doc = Html::parse_fragment(html);
     let mut blocks = Vec::new();
 
-    // We walk top-level children
-    let body_sel = Selector::parse("p, h1, h2, h3, h4, h5, h6, ul, ol, blockquote, hr, table").unwrap();
+    // We walk top-level block elements.
+    // div[data-type="block-math"] is Tiptap's block-level math node.
+    let body_sel = Selector::parse("p, h1, h2, h3, h4, h5, h6, ul, ol, blockquote, hr, table, div[data-type=\"block-math\"]").unwrap();
 
     for el in doc.select(&body_sel) {
         let tag = el.value().name();
         match tag {
             "hr" => blocks.push(Block::Hr),
+            "div" => {
+                // Tiptap block math: <div data-type="block-math" data-latex="...">
+                if let Some(latex) = el.value().attr("data-latex") {
+                    let rendered = latex_to_display(latex);
+                    blocks.push(Block::Para {
+                        spans: vec![TextSpan { text: rendered, bold: true, italic: false, underline: false }],
+                        align: Align::Center,
+                        heading: None,
+                    });
+                }
+            }
             "p" => {
                 let spans = collect_spans(el, false, false, false);
                 let align  = align_of(el);
@@ -204,33 +249,6 @@ fn parse_blocks(html: &str) -> Vec<Block> {
         }
     }
     blocks
-}
-
-/// Strip all HTML tags and $...$ math markers, returning plain text for
-/// backwards-compatible simple text rendering.
-pub fn html_to_plain(html: &str) -> String {
-    let blocks = parse_blocks(html);
-    let mut lines = Vec::new();
-    for b in &blocks {
-        match b {
-            Block::Para { spans, .. } => {
-                let line: String = spans.iter().map(|s| s.text.as_str()).collect();
-                lines.push(line);
-            }
-            Block::Hr => lines.push("─────────────────────────────────────────────────────".to_string()),
-            Block::TableRow { cells, .. } => {
-                let row = cells.iter().map(|cell| {
-                    cell.iter().map(|b| {
-                        if let Block::Para { spans, .. } = b {
-                            spans.iter().map(|s| s.text.as_str()).collect::<String>()
-                        } else { String::new() }
-                    }).collect::<Vec<String>>().join("")
-                }).collect::<Vec<_>>().join("  |  ");
-                lines.push(row);
-            }
-        }
-    }
-    lines.join("\n")
 }
 
 pub fn html_to_blocks(html: &str) -> Vec<Block> {

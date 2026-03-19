@@ -1,11 +1,16 @@
 use printpdf::*;
 use printpdf::image_crate as ic;
 use std::fs::File;
-use std::io::BufWriter;
+use std::io::{BufWriter, Cursor};
 use crate::db::get_conn;
 use crate::models::Questao;
 use crate::html_render::html_to_plain;
 use rusqlite::params;
+
+// Embed fonts at compile time so they work on every platform (Windows, macOS, Linux).
+// LiberationSans has full Unicode coverage for math symbols (≠, π, α, ≤, etc.)
+const FONT_REGULAR_BYTES: &[u8] = include_bytes!("../fonts/LiberationSans-Regular.ttf");
+const FONT_BOLD_BYTES:    &[u8] = include_bytes!("../fonts/LiberationSans-Bold.ttf");
 
 fn format_date_pt(date: &str) -> String {
     let parts: Vec<&str> = date.split('-').collect();
@@ -82,8 +87,10 @@ pub fn export_prova_pdf(id: i64, path: String) -> Result<(), String> {
     .collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())?;
 
     let (doc, page1, layer1) = PdfDocument::new(&titulo, Mm(210.0), Mm(297.0), "Layer 1");
-    let font      = doc.add_builtin_font(BuiltinFont::Helvetica).map_err(|e| e.to_string())?;
-    let font_bold = doc.add_builtin_font(BuiltinFont::HelveticaBold).map_err(|e| e.to_string())?;
+    // Use embedded LiberationSans (Unicode) instead of Helvetica (Latin-1 only).
+    // This ensures math symbols like ≠, π, α, ≤, ≥, √ render correctly.
+    let font      = doc.add_external_font(Cursor::new(FONT_REGULAR_BYTES)).map_err(|e| e.to_string())?;
+    let font_bold = doc.add_external_font(Cursor::new(FONT_BOLD_BYTES)).map_err(|e| e.to_string())?;
 
     let mut layer = doc.get_page(page1).get_layer(layer1);
     let mut y = 277.0_f32;

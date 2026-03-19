@@ -6,7 +6,7 @@ mod provas;
 mod notas;
 mod cronograma;
 mod html_render;
-mod pdf;
+mod typst_pdf;
 mod word;
 mod configuracoes;
 
@@ -15,7 +15,7 @@ use alunos::*;
 use provas::*;
 use notas::*;
 use cronograma::*;
-use pdf::*;
+use typst_pdf::export_prova_pdf;
 use word::*;
 use configuracoes::*;
 use tauri::Manager;

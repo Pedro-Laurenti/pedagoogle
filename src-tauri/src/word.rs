@@ -77,11 +77,15 @@ fn par_bold_sz(text: &str, sz: usize) -> Paragraph {
 /// Empty paragraph for spacing
 fn par_empty() -> Paragraph { Paragraph::new() }
 
-/// Horizontal rule: an empty paragraph with a bottom border
+/// Horizontal rule: an empty paragraph with a bottom border only.
+/// NOTE: set_border() uses unwrap_or_default() which adds all 4 borders (box).
+/// We must use set_borders() with ParagraphBorders::with_empty() to get only one side.
 fn par_hline() -> Paragraph {
     let mut p = Paragraph::new();
-    p.property = p.property
-        .set_border(ParagraphBorder::new(ParagraphBorderPosition::Bottom).size(6).color("000000"));
+    p.property = p.property.set_borders(
+        ParagraphBorders::with_empty()
+            .set(ParagraphBorder::new(ParagraphBorderPosition::Bottom).size(6).color("000000")),
+    );
     p
 }
 

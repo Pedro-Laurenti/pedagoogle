@@ -1,6 +1,15 @@
 @import "tailwindcss";
 @plugin "daisyui";
 
+/* Preview enunciado: preserve paragraph spacing from Tiptap HTML */
+.preview-enunciado p {
+  min-height: 1em;
+  margin-bottom: 0.25rem;
+}
+.preview-enunciado p:last-child {
+  margin-bottom: 0;
+}
+
 /* Custom thin scrollbar styles */
 .scrollbar-thin {
   scrollbar-width: thin;
