@@ -12,11 +12,17 @@ export interface OpcaoQuestao {
   par?: string;
 }
 
+export type MolduraEstilo = 'none' | 'simple' | 'double' | 'ornate' | 'classic' | 'modern';
+
 export interface Configuracoes {
   nome_escola: string;
   logo_path: string;
   cidade: string;
   diretor: string;
+  moldura_estilo: MolduraEstilo;
+  margem_folha: number;
+  margem_moldura: number;
+  margem_conteudo: number;
 }
 
 export interface Materia {

@@ -106,9 +106,7 @@ function PreviewProva({ form, questoes, materias }: { form: ProvaForm; questoes:
       <ol className="space-y-4">
         {questoes.map((q, i) => (
           <li key={q.id ?? q.tempId ?? i}>
-            <div className="font-semibold mb-1">
-              {i + 1}.{" "}<span className="font-normal text-gray-500 text-xs">({q.valor} pt)</span>
-            </div>
+            <div className="font-semibold mb-1">Questão {i + 1} ({q.valor} pt)</div>
             <div className="mb-1">{q.tipo === "completar_lacunas" ? renderBlanks(q.enunciado) : <EnunciadoPreview html={q.enunciado} />}</div>
             {q.tipo === "multipla_escolha" && (
               <ul className="mt-1 ml-4 space-y-1">

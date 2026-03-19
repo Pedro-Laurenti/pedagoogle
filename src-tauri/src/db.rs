@@ -74,6 +74,11 @@ pub fn migrate(conn: &Connection) -> Result<()> {
         "ALTER TABLE provas ADD COLUMN rodape TEXT NOT NULL DEFAULT ''",
         "ALTER TABLE questoes ADD COLUMN valor REAL NOT NULL DEFAULT 0.0",
         "ALTER TABLE questoes ADD COLUMN linhas_resposta INTEGER NOT NULL DEFAULT 3",
+        // Moldura/frame settings
+        "ALTER TABLE configuracoes ADD COLUMN moldura_estilo TEXT NOT NULL DEFAULT 'none'",
+        "ALTER TABLE configuracoes ADD COLUMN margem_folha REAL NOT NULL DEFAULT 15.0",
+        "ALTER TABLE configuracoes ADD COLUMN margem_moldura REAL NOT NULL DEFAULT 5.0",
+        "ALTER TABLE configuracoes ADD COLUMN margem_conteudo REAL NOT NULL DEFAULT 5.0",
     ];
     for sql in &additions {
         let _ = conn.execute(sql, []);

@@ -6,6 +6,10 @@ pub struct Configuracoes {
     pub logo_path: String,
     pub cidade: String,
     pub diretor: String,
+    pub moldura_estilo: String,
+    pub margem_folha: f64,
+    pub margem_moldura: f64,
+    pub margem_conteudo: f64,
 }
 
 #[derive(Serialize, Deserialize, Clone)]

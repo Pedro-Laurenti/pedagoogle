@@ -2,6 +2,7 @@
 /// Greek letters, superscripts, etc.) rather than Unicode approximations.
 
 use std::fs;
+use std::collections::HashMap;
 use regex::Regex;
 use typst::LibraryExt;
 use typst::diag::{FileError, FileResult};
@@ -23,6 +24,7 @@ struct ExamWorld {
     library: LazyHash<Library>,
     book:    LazyHash<FontBook>,
     fonts:   Vec<Font>,
+    files:   HashMap<String, Bytes>,  // Virtual files (images, etc.)
 }
 
 impl ExamWorld {
@@ -39,6 +41,22 @@ impl ExamWorld {
             library: LazyHash::new(Library::default()),
             book:    LazyHash::new(book),
             fonts,
+            files: HashMap::new(),
+        }
+    }
+    
+    fn new_with_files(markup: String, files: HashMap<String, Bytes>) -> Self {
+        let fonts: Vec<Font> = typst_assets::fonts()
+            .flat_map(|data| Font::iter(Bytes::new(data)))
+            .collect();
+        let book = FontBook::from_fonts(&fonts);
+        let source = Source::detached(markup);
+        Self {
+            source,
+            library: LazyHash::new(Library::default()),
+            book:    LazyHash::new(book),
+            fonts,
+            files,
         }
     }
 }
@@ -57,6 +75,16 @@ impl World for ExamWorld {
     }
 
     fn file(&self, id: FileId) -> FileResult<Bytes> {
+        // Check if it's a virtual file (image)
+        let path = id.vpath().as_rooted_path().to_string_lossy().to_string();
+        let clean_path = path.trim_start_matches('/');
+        if let Some(data) = self.files.get(clean_path) {
+            return Ok(data.clone());
+        }
+        // Try to read from filesystem (for local file paths)
+        if let Ok(data) = fs::read(clean_path) {
+            return Ok(Bytes::new(data));
+        }
         Err(FileError::NotFound(id.vpath().as_rooted_path().into()))
     }
 
@@ -247,39 +275,255 @@ fn escape_typst(s: &str) -> String {
      .replace('>', "\\>")
 }
 
-
+/// Decode base64 data URL to bytes
+fn decode_data_url(url: &str) -> Option<(String, Vec<u8>)> {
+    // data:image/png;base64,iVBORw0KGg...
+    if !url.starts_with("data:") {
+        return None;
+    }
+    let rest = url.strip_prefix("data:")?;
+    let (mime_part, data) = rest.split_once(',')?;
+    let mime = mime_part.split(';').next()?;
+    let ext = match mime {
+        "image/png" => "png",
+        "image/jpeg" | "image/jpg" => "jpg",
+        "image/gif" => "gif",
+        "image/webp" => "webp",
+        "image/svg+xml" => "svg",
+        _ => "png",
+    };
+    
+    use base64::{Engine as _, engine::general_purpose::STANDARD};
+    let bytes = STANDARD.decode(data.trim()).ok()?;
+    Some((ext.to_string(), bytes))
+}
 
 /// Convert Tiptap HTML enunciado to Typst markup, with proper math rendering.
-/// Math nodes (`data-type="inline-math"` / `data-type="block-math"`) are
-/// converted to Typst `$...$` inline math, which Typst renders properly.
-fn enunciado_to_typst(html: &str) -> String {
-    use scraper::{Html as SHtml, Selector};
-    // use regex::Regex; // Removed unused import
+/// Returns (typst_markup, images_map) where images_map contains virtual file paths → image bytes.
+fn enunciado_to_typst_with_images(html: &str, image_counter: &mut u32) -> (String, HashMap<String, Bytes>) {
+    use scraper::{Html as SHtml, Selector, ElementRef};
 
     let doc = SHtml::parse_fragment(html);
     let mut out = String::new();
+    let mut images: HashMap<String, Bytes> = HashMap::new();
 
-    // Walk top-level block elements
-    let sel = Selector::parse("p, h1, h2, h3, h4, h5, h6, div[data-type=\"block-math\"]").unwrap();
-    for el in doc.select(&sel) {
+    // Walk all block-level elements in document order
+    fn process_element(el: ElementRef, out: &mut String, images: &mut HashMap<String, Bytes>, counter: &mut u32) {
         let tag = el.value().name();
-        if tag == "div" {
-            if let Some(latex) = el.value().attr("data-latex") {
-                out.push_str(&format!("$ {} $\n", latex_to_typst(latex)));
+
+        match tag {
+            // Images
+            "img" => {
+                if let Some(src) = el.value().attr("src") {
+                    let (filename, bytes_opt) = if src.starts_with("data:") {
+                        // Base64 encoded image
+                        if let Some((ext, bytes)) = decode_data_url(src) {
+                            *counter += 1;
+                            let fname = format!("img_{}.{}", counter, ext);
+                            (fname, Some(bytes))
+                        } else {
+                            return;
+                        }
+                    } else if src.starts_with("http://") || src.starts_with("https://") {
+                        // URL image - skip for now (would need HTTP fetch)
+                        return;
+                    } else {
+                        // Local file path
+                        if let Ok(bytes) = fs::read(src) {
+                            *counter += 1;
+                            let ext = std::path::Path::new(src)
+                                .extension()
+                                .and_then(|e| e.to_str())
+                                .unwrap_or("png");
+                            let fname = format!("img_{}.{}", counter, ext);
+                            (fname, Some(bytes))
+                        } else {
+                            return;
+                        }
+                    };
+                    
+                    if let Some(bytes) = bytes_opt {
+                        images.insert(filename.clone(), Bytes::new(bytes));
+                        // Get width if specified
+                        let width_attr = el.value().attr("width")
+                            .or_else(|| {
+                                el.value().attr("style").and_then(|s| {
+                                    // Extract width from style="width: 300px"
+                                    s.split(';')
+                                        .find(|p| p.contains("width"))
+                                        .and_then(|p| p.split(':').nth(1))
+                                        .map(|w| w.trim().trim_end_matches("px"))
+                                })
+                            });
+                        
+                        if let Some(w) = width_attr {
+                            if let Ok(wpx) = w.parse::<f64>() {
+                                let width_pt = wpx * 0.75; // px to pt (approx)
+                                out.push_str(&format!("#image(\"{}\", width: {}pt)\n\n", filename, width_pt));
+                            } else {
+                                out.push_str(&format!("#image(\"{}\", width: 80%)\n\n", filename));
+                            }
+                        } else {
+                            out.push_str(&format!("#image(\"{}\", width: 80%)\n\n", filename));
+                        }
+                    }
+                }
             }
-            continue;
+            
+            // Block math
+            "div" => {
+                if el.value().attr("data-type") == Some("block-math") {
+                    if let Some(latex) = el.value().attr("data-latex") {
+                        out.push_str(&format!("$ {} $\n\n", latex_to_typst(latex)));
+                    }
+                } else {
+                    // Process children of generic divs
+                    for child in el.children() {
+                        if let Some(child_el) = ElementRef::wrap(child) {
+                            process_element(child_el, out, images, counter);
+                        }
+                    }
+                }
+            }
+
+            // Headings
+            "h1" | "h2" | "h3" | "h4" | "h5" | "h6" => {
+                let n = tag.chars().nth(1).unwrap_or('1').to_digit(10).unwrap_or(2) as usize;
+                let prefix = "=".repeat(n);
+                let content = collect_inline_typst_with_images(el, images, counter);
+                let align = get_alignment(&el);
+                if align.is_empty() {
+                    out.push_str(&format!("{} {}\n\n", prefix, content));
+                } else {
+                    out.push_str(&format!("#align({})[{} {}]\n\n", align, prefix, content));
+                }
+            }
+
+            // Paragraphs with alignment support
+            "p" => {
+                let content = collect_inline_typst_with_images(el, images, counter);
+                let align = get_alignment(&el);
+                if align.is_empty() {
+                    out.push_str(&format!("{}\n\n", content));
+                } else {
+                    out.push_str(&format!("#align({})[{}]\n\n", align, content));
+                }
+            }
+
+            // Unordered lists
+            "ul" => {
+                for child in el.children() {
+                    if let Some(li) = ElementRef::wrap(child) {
+                        if li.value().name() == "li" {
+                            let content = collect_inline_typst_with_images(li, images, counter);
+                            out.push_str(&format!("- {}\n", content));
+                        }
+                    }
+                }
+                out.push('\n');
+            }
+
+            // Ordered lists
+            "ol" => {
+                let mut idx = 1;
+                for child in el.children() {
+                    if let Some(li) = ElementRef::wrap(child) {
+                        if li.value().name() == "li" {
+                            let content = collect_inline_typst_with_images(li, images, counter);
+                            out.push_str(&format!("{}. {}\n", idx, content));
+                            idx += 1;
+                        }
+                    }
+                }
+                out.push('\n');
+            }
+
+            // Blockquotes
+            "blockquote" => {
+                out.push_str("#block(inset: (left: 1em), stroke: (left: 2pt + gray))[\n");
+                // Recursively process children
+                for child in el.children() {
+                    if let Some(child_el) = ElementRef::wrap(child) {
+                        process_element(child_el, out, images, counter);
+                    } else if let Some(text) = child.value().as_text() {
+                        let t = text.trim();
+                        if !t.is_empty() {
+                            out.push_str(&escape_typst(t));
+                            out.push('\n');
+                        }
+                    }
+                }
+                out.push_str("]\n\n");
+            }
+
+            // Tables
+            "table" => {
+                // Count columns from first row
+                let tr_sel = Selector::parse("tr").unwrap();
+                let th_td_sel = Selector::parse("th, td").unwrap();
+                let rows: Vec<ElementRef> = el.select(&tr_sel).collect();
+                if rows.is_empty() {
+                    return;
+                }
+                let num_cols = rows[0].select(&th_td_sel).count();
+                if num_cols == 0 {
+                    return;
+                }
+
+                out.push_str(&format!("#table(columns: {},\n", num_cols));
+                for row in &rows {
+                    for cell in row.select(&th_td_sel) {
+                        let content = collect_inline_typst_with_images(cell, images, counter);
+                        let is_header = cell.value().name() == "th";
+                        if is_header {
+                            out.push_str(&format!("  table.header()[#strong[{}]],\n", content));
+                        } else {
+                            out.push_str(&format!("  [{}],\n", content));
+                        }
+                    }
+                }
+                out.push_str(")\n\n");
+            }
+
+            // Skip these — we process their children via parent
+            "li" | "thead" | "tbody" | "tr" | "th" | "td" => {}
+
+            // For other elements, try to get inline content
+            _ => {
+                let content = collect_inline_typst_with_images(el, images, counter);
+                if !content.trim().is_empty() {
+                    out.push_str(&format!("{}\n", content));
+                }
+            }
         }
-        // Paragraph / heading — walk inline children
-        let content = collect_inline_typst(el);
-        let lvl_prefix = if tag.starts_with('h') {
-            let n = tag.chars().nth(1).unwrap_or('1').to_digit(10).unwrap_or(2) as usize;
-            "=".repeat(n) + " "
-        } else {
-            String::new()
-        };
-        out.push_str(&lvl_prefix);
-        out.push_str(&content);
-        out.push('\n');
+    }
+
+    // Get alignment from style attribute
+    fn get_alignment(el: &ElementRef) -> String {
+        if let Some(style) = el.value().attr("style") {
+            if style.contains("text-align: center") || style.contains("text-align:center") {
+                return "center".to_string();
+            }
+            if style.contains("text-align: right") || style.contains("text-align:right") {
+                return "right".to_string();
+            }
+            if style.contains("text-align: justify") || style.contains("text-align:justify") {
+                return "center".to_string(); // Typst doesn't have justify per-element easily
+            }
+        }
+        String::new()
+    }
+
+    // Walk top-level elements
+    let body_sel = Selector::parse("body, html").ok();
+    let root = body_sel.as_ref()
+        .and_then(|s| doc.select(s).next())
+        .unwrap_or_else(|| doc.root_element());
+
+    for child in root.children() {
+        if let Some(el) = ElementRef::wrap(child) {
+            process_element(el, &mut out, &mut images, image_counter);
+        }
     }
 
     // If nothing parsed (bare text without block wrapper), fall back to plain text
@@ -288,11 +532,11 @@ fn enunciado_to_typst(html: &str) -> String {
         out = escape_typst(plain.trim());
     }
 
-    out
+    (out, images)
 }
 
-/// Recursively collect inline Typst markup from an element, handling math nodes.
-fn collect_inline_typst(el: scraper::ElementRef) -> String {
+/// Recursively collect inline Typst markup from an element, handling math nodes and images.
+fn collect_inline_typst_with_images(el: scraper::ElementRef, images: &mut HashMap<String, Bytes>, counter: &mut u32) -> String {
     use scraper::{Node, ElementRef};
     let mut out = String::new();
     for child in el.children() {
@@ -323,8 +567,44 @@ fn collect_inline_typst(el: scraper::ElementRef) -> String {
                     continue;
                 }
                 let tag = e.name();
+                
+                // Handle inline images
+                if tag == "img" {
+                    if let Some(src) = e.attr("src") {
+                        let (filename, bytes_opt) = if src.starts_with("data:") {
+                            if let Some((ext, bytes)) = decode_data_url(src) {
+                                *counter += 1;
+                                let fname = format!("img_{}.{}", counter, ext);
+                                (fname, Some(bytes))
+                            } else {
+                                continue;
+                            }
+                        } else if !src.starts_with("http") {
+                            if let Ok(bytes) = fs::read(src) {
+                                *counter += 1;
+                                let ext = std::path::Path::new(src)
+                                    .extension()
+                                    .and_then(|e| e.to_str())
+                                    .unwrap_or("png");
+                                let fname = format!("img_{}.{}", counter, ext);
+                                (fname, Some(bytes))
+                            } else {
+                                continue;
+                            }
+                        } else {
+                            continue;
+                        };
+                        
+                        if let Some(bytes) = bytes_opt {
+                            images.insert(filename.clone(), Bytes::new(bytes));
+                            out.push_str(&format!("#image(\"{}\", height: 1em)", filename));
+                        }
+                    }
+                    continue;
+                }
+                
                 let child_ref = ElementRef::wrap(child).unwrap();
-                let inner = collect_inline_typst(child_ref);
+                let inner = collect_inline_typst_with_images(child_ref, images, counter);
                 match tag {
                     "strong" | "b" => out.push_str(&format!("#strong[{}]", inner)),
                     "em"     | "i" => out.push_str(&format!("#emph[{}]", inner)),
@@ -354,15 +634,113 @@ fn format_date_pt(date: &str) -> String {
 
 // ── Build the full Typst document source ────────────────────────────────────
 
+/// Return a Typst background content expression that draws a page frame.
+/// Uses absolute A4 dimensions (210×297 mm) with `m` = margem_folha offset from paper edge.
+fn generate_frame_background(estilo: &str, m: f64) -> String {
+    const FW: f64 = 210.0;
+    const FH: f64 = 297.0;
+    match estilo {
+        "simple" => format!(
+            "place(top + left, dx: {m:.2}mm, dy: {m:.2}mm, \
+             rect(width: {w:.2}mm, height: {h:.2}mm, stroke: 0.5pt + black, fill: none))",
+            m = m, w = FW - 2.0 * m, h = FH - 2.0 * m
+        ),
+        "double" => {
+            let m2 = m + 3.0;
+            format!(
+                "{{ place(top + left, dx: {m:.2}mm, dy: {m:.2}mm, \
+                 rect(width: {w1:.2}mm, height: {h1:.2}mm, stroke: 0.5pt + black, fill: none)); \
+                 place(top + left, dx: {m2:.2}mm, dy: {m2:.2}mm, \
+                 rect(width: {w2:.2}mm, height: {h2:.2}mm, stroke: 0.5pt + black, fill: none)) }}",
+                m = m, w1 = FW - 2.0 * m,  h1 = FH - 2.0 * m,
+                m2 = m2, w2 = FW - 2.0 * m2, h2 = FH - 2.0 * m2
+            )
+        }
+        "ornate" => {
+            let w  = FW - 2.0 * m;
+            let h  = FH - 2.0 * m;
+            let cs = 10.0_f64; // corner accent size mm
+            let xr = m + w - cs;
+            let yb = m + h - cs;
+            format!(
+                "{{ place(top + left, dx: {m:.2}mm, dy: {m:.2}mm, \
+                 rect(width: {w:.2}mm, height: {h:.2}mm, stroke: 0.75pt + black, fill: none)); \
+                 place(top + left, dx: {m:.2}mm, dy: {m:.2}mm, \
+                 line(start: (0mm, {cs:.2}mm), end: ({cs:.2}mm, 0mm), stroke: 1.5pt + black)); \
+                 place(top + left, dx: {xr:.2}mm, dy: {m:.2}mm, \
+                 line(start: ({cs:.2}mm, 0mm), end: (0mm, {cs:.2}mm), stroke: 1.5pt + black)); \
+                 place(top + left, dx: {m:.2}mm, dy: {yb:.2}mm, \
+                 line(start: (0mm, 0mm), end: ({cs:.2}mm, {cs:.2}mm), stroke: 1.5pt + black)); \
+                 place(top + left, dx: {xr:.2}mm, dy: {yb:.2}mm, \
+                 line(start: (0mm, {cs:.2}mm), end: ({cs:.2}mm, 0mm), stroke: 1.5pt + black)) }}",
+                m = m, w = w, h = h, cs = cs, xr = xr, yb = yb
+            )
+        }
+        "classic" => {
+            let m2 = m + 4.0;
+            format!(
+                "{{ place(top + left, dx: {m:.2}mm, dy: {m:.2}mm, \
+                 rect(width: {w1:.2}mm, height: {h1:.2}mm, stroke: 1.5pt + black, fill: none)); \
+                 place(top + left, dx: {m2:.2}mm, dy: {m2:.2}mm, \
+                 rect(width: {w2:.2}mm, height: {h2:.2}mm, stroke: 0.3pt + black, fill: none)) }}",
+                m = m, m2 = m2,
+                w1 = FW - 2.0 * m,  h1 = FH - 2.0 * m,
+                w2 = FW - 2.0 * m2, h2 = FH - 2.0 * m2
+            )
+        }
+        "modern" => {
+            let cs  = 15.0_f64; // corner L-shape length mm
+            let t   =  0.7_f64; // ~2pt stroke thickness in mm
+            let w   = FW - 2.0 * m;
+            let h   = FH - 2.0 * m;
+            let xr  = m + w - cs;
+            let xrr = m + w - t;
+            let yb  = m + h - t;
+            let ybr = m + h - cs;
+            format!(
+                "{{ \
+                 place(top+left, dx:{m:.2}mm,   dy:{m:.2}mm,  rect(width:{cs:.2}mm, height:{t:.2}mm, fill:black, stroke:none)); \
+                 place(top+left, dx:{m:.2}mm,   dy:{m:.2}mm,  rect(width:{t:.2}mm, height:{cs:.2}mm, fill:black, stroke:none)); \
+                 place(top+left, dx:{xr:.2}mm,  dy:{m:.2}mm,  rect(width:{cs:.2}mm, height:{t:.2}mm, fill:black, stroke:none)); \
+                 place(top+left, dx:{xrr:.2}mm, dy:{m:.2}mm,  rect(width:{t:.2}mm, height:{cs:.2}mm, fill:black, stroke:none)); \
+                 place(top+left, dx:{m:.2}mm,   dy:{yb:.2}mm, rect(width:{cs:.2}mm, height:{t:.2}mm, fill:black, stroke:none)); \
+                 place(top+left, dx:{m:.2}mm,   dy:{ybr:.2}mm,rect(width:{t:.2}mm, height:{cs:.2}mm, fill:black, stroke:none)); \
+                 place(top+left, dx:{xr:.2}mm,  dy:{yb:.2}mm, rect(width:{cs:.2}mm, height:{t:.2}mm, fill:black, stroke:none)); \
+                 place(top+left, dx:{xrr:.2}mm, dy:{ybr:.2}mm,rect(width:{t:.2}mm, height:{cs:.2}mm, fill:black, stroke:none)) \
+                 }}",
+                m = m, cs = cs, t = t,
+                xr = xr, xrr = xrr, yb = yb, ybr = ybr
+            )
+        }
+        _ => String::new(), // "none" or unknown
+    }
+}
+
 fn build_typst_source(
     titulo: &str, descricao: &str, rodape: &str,
     nome_escola: &str, cidade: &str, diretor: &str, professor: &str, data: &str,
     questoes: &[Questao],
-) -> String {
+    moldura_estilo: &str, margem_folha: f64, margem_moldura: f64, margem_conteudo: f64,
+) -> (String, HashMap<String, Bytes>) {
     let mut src = String::new();
+    let mut all_images: HashMap<String, Bytes> = HashMap::new();
+    let mut image_counter = 0u32;
 
-    // Page setup
-    src.push_str("#set page(paper: \"a4\", margin: (left: 20mm, right: 20mm, top: 15mm, bottom: 20mm))\n");
+    // Calculate total margin for content: paper margin + frame margin + content margin
+    let total_margin = margem_folha + margem_moldura + margem_conteudo;
+
+    // Build optional background expression for the frame
+    let bg_expr = if moldura_estilo != "none" {
+        format!(", background: {}", generate_frame_background(moldura_estilo, margem_folha))
+    } else {
+        String::new()
+    };
+
+    // Page setup with configurable margins (one #set page call combining margin + background)
+    src.push_str(&format!(
+        "#set page(paper: \"a4\", margin: (left: {tm:.2}mm, right: {tm:.2}mm, top: {tm:.2}mm, bottom: {tm:.2}mm){bg})\n",
+        tm = total_margin, bg = bg_expr
+    ));
     src.push_str("#set text(font: \"New Computer Modern\", size: 11pt)\n");
     src.push_str("#set par(justify: false, leading: 0.65em)\n");
     src.push_str("#set math.equation(numbering: none)\n\n");
@@ -411,7 +789,8 @@ fn build_typst_source(
         ));
 
         // Enunciado — convert HTML with math to Typst markup
-        let enunciado_typst = enunciado_to_typst(&q.enunciado);
+        let (enunciado_typst, enunciado_images) = enunciado_to_typst_with_images(&q.enunciado, &mut image_counter);
+        all_images.extend(enunciado_images);
         if !enunciado_typst.trim().is_empty() {
             src.push_str("#pad(left: 5mm)[\n");
             src.push_str(&enunciado_typst);
@@ -490,7 +869,7 @@ fn build_typst_source(
         src.push_str(&format!("#align(center)[#text(size: 9pt)[{}]]\n", escape_typst(rodape)));
     }
 
-    src
+    (src, all_images)
 }
 
 // ── Tauri command ────────────────────────────────────────────────────────────
@@ -499,18 +878,23 @@ fn build_typst_source(
 pub fn export_prova_pdf(id: i64, path: String) -> Result<(), String> {
     let conn = get_conn().map_err(|e| e.to_string())?;
 
-    let (titulo, descricao, rodape, nome_escola, cidade, diretor, professor, data, _logo_path):
-        (String, String, String, String, String, String, String, String, String) = conn.query_row(
+    let (titulo, descricao, rodape, nome_escola, cidade, diretor, professor, data, _logo_path,
+         moldura_estilo, margem_folha, margem_moldura, margem_conteudo):
+        (String, String, String, String, String, String, String, String, String,
+         String, f64, f64, f64) = conn.query_row(
         "SELECT p.titulo, p.descricao, p.rodape,
                 COALESCE(c.nome_escola,''), COALESCE(c.cidade,''), COALESCE(c.diretor,''),
-                COALESCE(m.professor,''), p.data, COALESCE(c.logo_path,'')
+                COALESCE(m.professor,''), p.data, COALESCE(c.logo_path,''),
+                COALESCE(c.moldura_estilo,'none'), COALESCE(c.margem_folha,15.0),
+                COALESCE(c.margem_moldura,5.0), COALESCE(c.margem_conteudo,5.0)
          FROM provas p
          LEFT JOIN configuracoes c ON c.id=1
          LEFT JOIN materias m ON m.id=p.materia_id
          WHERE p.id=?1",
         params![id],
         |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?,
-                r.get(5)?, r.get(6)?, r.get(7)?, r.get(8)?)),
+                r.get(5)?, r.get(6)?, r.get(7)?, r.get(8)?, r.get(9)?,
+                r.get(10)?, r.get(11)?, r.get(12)?)),
     ).map_err(|e| e.to_string())?;
 
     let mut stmt = conn.prepare(
@@ -528,13 +912,14 @@ pub fn export_prova_pdf(id: i64, path: String) -> Result<(), String> {
     }).map_err(|e| e.to_string())?
     .collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())?;
 
-    let markup = build_typst_source(
+    let (markup, images) = build_typst_source(
         &titulo, &descricao, &rodape,
         &nome_escola, &cidade, &diretor, &professor, &data,
         &questoes,
+        &moldura_estilo, margem_folha, margem_moldura, margem_conteudo,
     );
 
-    let world = ExamWorld::new(markup.clone());
+    let world = ExamWorld::new_with_files(markup.clone(), images);
     // Write typst source to /tmp for debugging — remove after confirming PDF is correct
     let _ = fs::write("/tmp/pedagoogle_last_export.typ", &markup);
 
@@ -550,4 +935,50 @@ pub fn export_prova_pdf(id: i64, path: String) -> Result<(), String> {
         .map_err(|errs| errs.iter().map(|e| e.message.to_string()).collect::<Vec<_>>().join("; "))?;
 
     fs::write(&path, pdf_bytes).map_err(|e| e.to_string())
+}
+
+// ── Public function to render LaTeX as PNG ──────────────────────────────────
+
+/// Render a LaTeX formula to PNG bytes using Typst.
+/// Returns (png_bytes, width_px, height_px) or an error.
+pub fn render_latex_to_png(latex: &str) -> Result<(Vec<u8>, u32, u32), String> {
+    let typst_math = latex_to_typst(latex);
+    
+    // Create a minimal Typst document with just the formula
+    // Use transparent background and auto page size
+    let markup = format!(
+        r#"#set page(width: auto, height: auto, margin: 2pt, fill: none)
+#set text(font: "New Computer Modern", size: 14pt)
+${}$"#,
+        typst_math
+    );
+    
+    let world = ExamWorld::new(markup);
+    let result = typst::compile::<PagedDocument>(&world);
+    
+    let document = result.output.map_err(|errs| {
+        let msg = errs.iter().map(|e| e.message.to_string()).collect::<Vec<_>>().join("; ");
+        eprintln!("[typst latex error] {} -> {}", latex, msg);
+        msg
+    })?;
+    
+    // Render first page to pixmap at 2x scale for crisp rendering
+    let page = &document.pages[0];
+    let scale = 2.0;
+    let pixmap = typst_render::render(page, scale);
+    
+    let width = pixmap.width();
+    let height = pixmap.height();
+    
+    // Encode as PNG
+    let mut png_data = Vec::new();
+    {
+        let mut encoder = png::Encoder::new(&mut png_data, width, height);
+        encoder.set_color(png::ColorType::Rgba);
+        encoder.set_depth(png::BitDepth::Eight);
+        let mut writer = encoder.write_header().map_err(|e| e.to_string())?;
+        writer.write_image_data(pixmap.data()).map_err(|e| e.to_string())?;
+    }
+    
+    Ok((png_data, width, height))
 }
