@@ -1,9 +1,10 @@
 "use client";
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { MdArrowBack, MdAdd, MdDelete, MdPictureAsPdf, MdDescription, MdVisibility, MdEdit } from "react-icons/md";
 import { invokeCmd } from "@/utils/tauri";
 import { save } from "@tauri-apps/plugin-dialog";
 import RichEditor from "@/components/RichEditor";
+import "katex/dist/katex.min.css";
 import type { Materia, Prova, Questao, QuestaoInput, OpcaoQuestao, TipoQuestao, ToastState } from "@/types";
 
 const TIPOS: TipoQuestao[] = ["dissertativa", "multipla_escolha", "verdadeiro_falso", "completar_lacunas", "associacao", "ordenar"];
@@ -34,6 +35,30 @@ const newQuestao = (): QuestaoInput => ({ enunciado: "", tipo: "dissertativa", o
 
 function somaQuestoes(questoes: QuestaoInput[]) {
   return questoes.reduce((acc, q) => acc + (Number(q.valor) || 0), 0);
+}
+
+// Renders stored Tiptap HTML with KaTeX math re-rendered client-side
+function EnunciadoPreview({ html }: { html: string }) {
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!ref.current) return;
+    const el = ref.current;
+    // Use KaTeX auto-render to scan all text nodes for $...$ patterns — works regardless of
+    // how Tiptap serializes math (plain text delimiters or data-type span nodes)
+    import("katex/contrib/auto-render").then((mod) => {
+      const renderMathInElement = mod.default;
+      renderMathInElement(el, {
+        delimiters: [
+          { left: "$$", right: "$$", display: true },
+          { left: "$", right: "$", display: false },
+        ],
+        throwOnError: false,
+      });
+    });
+  }, [html]);
+
+  return <div ref={ref} className="preview-enunciado inline" dangerouslySetInnerHTML={{ __html: html }} />;
 }
 
 function renderBlanks(text: string) {
@@ -70,7 +95,7 @@ function PreviewProva({ form, questoes, materias }: { form: ProvaForm; questoes:
       <ol className="space-y-4">
         {questoes.map((q, i) => (
           <li key={q.id ?? q.tempId ?? i}>
-            <p className="font-semibold">{i + 1}.{" "}{q.tipo === "completar_lacunas" ? renderBlanks(q.enunciado) : q.enunciado}{" "}<span className="font-normal text-gray-500 text-xs">({q.valor} pt)</span></p>
+            <div className="font-semibold">{i + 1}.{" "}{q.tipo === "completar_lacunas" ? renderBlanks(q.enunciado) : <EnunciadoPreview html={q.enunciado} />}{" "}<span className="font-normal text-gray-500 text-xs">({q.valor} pt)</span></div>
             {q.tipo === "multipla_escolha" && (
               <ul className="mt-1 ml-4 space-y-1">
                 {q.opcoes.map((o, j) => (
@@ -302,7 +327,7 @@ export default function ProvaEditor({ provaId, materias, onClose, onNotify }: Pr
             </div>
             <div className="flex gap-2">
               <button className="btn btn-sm btn-ghost" onClick={distribuirPontosIgual} disabled={questoes.length === 0}>
-                Distribuir pts igualmente
+                Distribuir pontos igualmente
               </button>
               <button className="btn btn-sm btn-outline" onClick={addQuestao}><MdAdd /> Questão</button>
             </div>

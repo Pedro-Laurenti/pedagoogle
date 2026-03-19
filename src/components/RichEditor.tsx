@@ -176,6 +176,7 @@ export default function RichEditor({ value, onChange, placeholder, minHeight = 1
   const [mathOpen, setMathOpen] = useState(false);
 
   const editor = useEditor({
+    immediatelyRender: false,
     extensions: [
       StarterKit,
       Underline,
