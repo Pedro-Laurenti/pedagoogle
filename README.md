@@ -50,3 +50,16 @@ cd src-tauri && cargo tauri build
 - **Alunos**: CRUD completo
 - **Notas**: lancamento flexivel por aluno (provas, atividades, trabalhos)
 - **Cronograma**: grade semanal de aulas
+
+## Publicar nova versão
+
+```bash
+git add .
+git commit -m "feat: descrição das mudanças"
+git push origin main
+
+git tag v1.x.x
+git push origin v1.x.x
+```
+
+O GitHub Actions compila automaticamente para Windows e Linux e cria um rascunho de Release em **github.com/Pedro-Laurenti/pedagoogle/releases**. Abra o rascunho, revise e clique **Publish release**.

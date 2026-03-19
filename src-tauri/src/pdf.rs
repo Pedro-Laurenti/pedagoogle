@@ -4,6 +4,7 @@ use std::fs::File;
 use std::io::BufWriter;
 use crate::db::get_conn;
 use crate::models::Questao;
+use crate::html_render::html_to_plain;
 use rusqlite::params;
 
 fn format_date_pt(date: &str) -> String {
@@ -202,7 +203,8 @@ pub fn export_prova_pdf(id: i64, path: String) -> Result<(), String> {
         y -= 6.5;
 
         // Enunciado (word-wrapped)
-        for line in wrap_text(&q.enunciado, 80) {
+        let enunciado_plain = html_to_plain(&q.enunciado);
+        for line in wrap_text(&enunciado_plain, 80) {
             maybe_new_page!(25.0);
             layer.use_text(&line, 10.5, Mm(lm + 3.0), Mm(y), &font);
             y -= 6.0;

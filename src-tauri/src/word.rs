@@ -2,9 +2,53 @@ use docx_rs::*;
 use printpdf::image_crate as ic;
 use crate::db::get_conn;
 use crate::models::Questao;
+use crate::html_render::{html_to_blocks, Block, Align};
 use rusqlite::params;
 
 // ── helpers ──────────────────────────────────────────────────────────────────
+
+/// Convert a parsed HTML Block into a docx Paragraph
+fn block_to_paragraph(block: &Block, indent_twips: Option<i32>) -> Paragraph {
+    match block {
+        Block::Para { spans, align, heading } => {
+            let sz: usize = match heading { Some(1) => 32, Some(2) => 28, Some(3) => 24, _ => 22 };
+            let alignment = match align {
+                Align::Center => Some(AlignmentType::Center),
+                Align::Right  => Some(AlignmentType::Right),
+                _             => None,
+            };
+            let mut p = Paragraph::new();
+            if let Some(a) = alignment { p = p.align(a); }
+            if let Some(ind) = indent_twips {
+                p = p.indent(Some(ind), None, None, None);
+            }
+            for span in spans {
+                if span.text.is_empty() { continue; }
+                let mut run = Run::new().add_text(&span.text).size(sz);
+                if span.bold    { run = run.bold(); }
+                if span.italic  { run = run.italic(); }
+                if span.underline { run = run.underline("single"); }
+                p = p.add_run(run);
+            }
+            p
+        }
+        Block::Hr => par_hline(),
+        Block::TableRow { cells, is_header } => {
+            // Flatten table row cells as a single indented text line
+            let txt = cells.iter().map(|cell| {
+                cell.iter().filter_map(|b| if let Block::Para { spans, .. } = b {
+                    Some(spans.iter().map(|s| s.text.as_str()).collect::<String>())
+                } else { None }).collect::<String>()
+            }).collect::<Vec<_>>().join("  |  ");
+            let mut p = Paragraph::new();
+            let mut run = Run::new().add_text(&txt).size(20);
+            if *is_header { run = run.bold(); }
+            p = p.add_run(run);
+            if let Some(ind) = indent_twips { p = p.indent(Some(ind), None, None, None); }
+            p
+        }
+    }
+}
 
 fn format_date_pt(date: &str) -> String {
     let parts: Vec<&str> = date.split('-').collect();
@@ -160,8 +204,10 @@ pub fn export_prova_word(id: i64, path: String) -> Result<(), String> {
             ),
         );
 
-        // Enunciado
-        doc = doc.add_paragraph(par_indent(&q.enunciado, 22));
+        // Enunciado (rich HTML → docx blocks)
+        for block in html_to_blocks(&q.enunciado) {
+            doc = doc.add_paragraph(block_to_paragraph(&block, Some(360)));
+        }
 
         // Options / answer area
         match q.tipo.as_str() {

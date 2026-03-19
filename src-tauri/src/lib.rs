@@ -5,6 +5,7 @@ mod alunos;
 mod provas;
 mod notas;
 mod cronograma;
+mod html_render;
 mod pdf;
 mod word;
 mod configuracoes;
@@ -23,6 +24,7 @@ use tauri::Manager;
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_fs::init())
         .setup(|app| {
             let data_dir = app.path().app_data_dir().expect("no app data dir");
             std::fs::create_dir_all(&data_dir)?;

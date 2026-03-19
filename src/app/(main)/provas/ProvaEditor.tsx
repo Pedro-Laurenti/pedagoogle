@@ -3,6 +3,7 @@ import { useState, useEffect, useCallback } from "react";
 import { MdArrowBack, MdAdd, MdDelete, MdPictureAsPdf, MdDescription, MdVisibility, MdEdit } from "react-icons/md";
 import { invokeCmd } from "@/utils/tauri";
 import { save } from "@tauri-apps/plugin-dialog";
+import RichEditor from "@/components/RichEditor";
 import type { Materia, Prova, Questao, QuestaoInput, OpcaoQuestao, TipoQuestao, ToastState } from "@/types";
 
 const TIPOS: TipoQuestao[] = ["dissertativa", "multipla_escolha", "verdadeiro_falso", "completar_lacunas", "associacao", "ordenar"];
@@ -335,7 +336,12 @@ export default function ProvaEditor({ provaId, materias, onClose, onNotify }: Pr
                   </div>
                   <fieldset className="fieldset">
                     <legend className="fieldset-legend">Enunciado</legend>
-                    <textarea className="textarea w-full" rows={3} value={q.enunciado} onChange={(e) => updateQuestao(idx, "enunciado", e.target.value)} placeholder={q.tipo === "completar_lacunas" ? 'Ex: "O Brasil foi descoberto em ___ por ___."' : undefined} />
+                    <RichEditor
+                      value={q.enunciado}
+                      onChange={(html) => updateQuestao(idx, "enunciado", html)}
+                      placeholder={q.tipo === "completar_lacunas" ? 'Ex: "O Brasil foi descoberto em ___ por ___"' : "Digite o enunciado da questão"}
+                      minHeight={90}
+                    />
                   </fieldset>
 
                   {q.tipo === "dissertativa" && (
