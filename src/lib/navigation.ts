@@ -31,6 +31,7 @@ export const menuItems: MenuItem[] = [
     icon: MdDashboard,
     description: "Visão geral do sistema",
     showInSidebar: true,
+    group: "Escola",
   },
   {
     href: "/professores",
@@ -39,6 +40,7 @@ export const menuItems: MenuItem[] = [
     description: "Cadastro de professores",
     showInSidebar: true,
     feature: "usar_professores",
+    group: "Pessoas",
   },
   {
     href: "/materias",
@@ -46,6 +48,7 @@ export const menuItems: MenuItem[] = [
     icon: MdSchool,
     description: "Gerenciar matérias",
     showInSidebar: true,
+    group: "Conteúdo",
   },
   {
     href: "/provas",
@@ -53,6 +56,7 @@ export const menuItems: MenuItem[] = [
     icon: MdAssignment,
     description: "Criar e gerenciar provas",
     showInSidebar: true,
+    group: "Conteúdo",
   },
   {
     href: "/turmas",
@@ -61,6 +65,7 @@ export const menuItems: MenuItem[] = [
     description: "Gerenciar turmas",
     showInSidebar: true,
     feature: "usar_turmas",
+    group: "Pessoas",
   },
   {
     href: "/alunos",
@@ -68,6 +73,7 @@ export const menuItems: MenuItem[] = [
     icon: MdPeople,
     description: "Cadastro de alunos",
     showInSidebar: true,
+    group: "Pessoas",
   },
   {
     href: "/notas",
@@ -75,6 +81,7 @@ export const menuItems: MenuItem[] = [
     icon: MdGrade,
     description: "Lançamento de notas",
     showInSidebar: true,
+    group: "Avaliação",
   },
   {
     href: "/cronograma",
@@ -82,6 +89,7 @@ export const menuItems: MenuItem[] = [
     icon: MdCalendarToday,
     description: "Grade semanal de aulas",
     showInSidebar: true,
+    group: "Avaliação",
   },
   {
     href: "/frequencia",
@@ -90,6 +98,7 @@ export const menuItems: MenuItem[] = [
     description: "Controle de presença",
     showInSidebar: true,
     feature: "usar_frequencia",
+    group: "Avaliação",
   },
   {
     href: "/configuracoes",
@@ -97,6 +106,7 @@ export const menuItems: MenuItem[] = [
     icon: MdSettings,
     description: "Dados da escola",
     showInSidebar: true,
+    group: "Escola",
   },
 ];
 

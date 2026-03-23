@@ -25,11 +25,11 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           }}
         />
       </head>
-      <body className="antialiased bg-base-100" suppressHydrationWarning>
-        <div className="drawer lg:drawer-open">
+      <body className="antialiased bg-base-100 h-screen overflow-hidden" suppressHydrationWarning>
+        <div className="drawer lg:drawer-open h-screen">
           <input id="drawer-toggle" type="checkbox" className="drawer-toggle" />
-          <div className="drawer-content flex flex-col max-h-screen overflow-hidden">
-            <div className="flex-1 overflow-y-auto">
+          <div className="drawer-content flex flex-col h-screen overflow-hidden">
+            <div className="flex-1 overflow-y-auto min-h-0">
               <main className="min-h-full">{children}</main>
             </div>
           </div>

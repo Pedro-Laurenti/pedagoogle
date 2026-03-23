@@ -32,6 +32,10 @@ export interface Configuracoes {
   usar_professores: boolean;
   usar_frequencia: boolean;
   usar_recuperacao: boolean;
+  aulas_por_dia: number;
+  minutos_por_aula: number;
+  hora_entrada: string;
+  dias_letivos_semana: number;
 }
 
 export interface Professor {

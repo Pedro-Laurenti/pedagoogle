@@ -64,7 +64,7 @@ pub fn run() {
             list_categoria_lancamentos, create_categoria_lancamento, update_categoria_lancamento, delete_categoria_lancamento,
             list_aulas, create_aula, update_aula, delete_aula, copy_semestre,
             export_prova_pdf, export_prova_word, export_gabarito_pdf, export_boletim_pdf, export_prova_pdf_embaralhada,
-            get_configuracoes, save_configuracoes, backup_database, restore_database,
+            get_configuracoes, save_configuracoes, backup_database, restore_database, check_update,
             list_presencas, upsert_presenca, get_frequencia_aluno,
             get_dashboard_stats, list_proximas_provas, get_alertas, get_medias_por_materia,
         ])

@@ -77,13 +77,15 @@ impl World for ExamWorld {
     }
 
     fn file(&self, id: FileId) -> FileResult<Bytes> {
-        // Check if it's a virtual file (image)
+        // Check if it's a virtual file (image).
+        // On Windows the rooted path starts with '\' instead of '/',
+        // so strip both separators to get the bare filename.
         let path = id.vpath().as_rooted_path().to_string_lossy().to_string();
-        let clean_path = path.trim_start_matches('/');
+        let clean_path = path.trim_start_matches(|c| c == '/' || c == '\\');
         if let Some(data) = self.files.get(clean_path) {
             return Ok(data.clone());
         }
-        // Try to read from filesystem (for local file paths)
+        // Try to read from filesystem (absolute local paths stored verbatim)
         if let Ok(data) = fs::read(clean_path) {
             return Ok(Bytes::new(data));
         }

@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useCurrentPage } from '@/hooks/useCurrentPage';
 import { menuItems, MenuItem } from '@/lib/navigation';
-import { MdExpandMore, MdKeyboardDoubleArrowRight, MdDashboard } from 'react-icons/md';
+import { MdExpandMore, MdChevronRight, MdKeyboardDoubleArrowRight, MdDashboard } from 'react-icons/md';
 import ThemeToggle from '@/components/ThemeToggle';
 import packageJson from '@/package.json';
 import { invokeCmd } from '@/utils/tauri';
@@ -14,6 +14,7 @@ export default function Sidebar() {
   const pathname = useCurrentPage();
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [expandedItems, setExpandedItems] = useState<Set<string>>(new Set());
+  const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
   const [config, setConfig] = useState<Configuracoes | null>(null);
 
   useEffect(() => {
@@ -22,8 +23,11 @@ export default function Sidebar() {
 
   useEffect(() => {
     const saved = localStorage.getItem('sidebar-collapsed');
-    if (saved !== null) {
-      setIsCollapsed(saved === 'true');
+    if (saved !== null) setIsCollapsed(saved === 'true');
+
+    const savedGroups = localStorage.getItem('sidebar-collapsed-groups');
+    if (savedGroups) {
+      try { setCollapsedGroups(new Set(JSON.parse(savedGroups))); } catch {}
     }
 
     const currentItem = menuItems.find(
@@ -38,6 +42,15 @@ export default function Sidebar() {
     const newState = !isCollapsed;
     setIsCollapsed(newState);
     localStorage.setItem('sidebar-collapsed', String(newState));
+  };
+
+  const toggleGroup = (groupName: string) => {
+    setCollapsedGroups((prev) => {
+      const next = new Set(prev);
+      if (next.has(groupName)) { next.delete(groupName); } else { next.add(groupName); }
+      localStorage.setItem('sidebar-collapsed-groups', JSON.stringify([...next]));
+      return next;
+    });
   };
 
   const getItemId = (item: MenuItem): string | undefined => item.id || item.href;
@@ -229,18 +242,30 @@ export default function Sidebar() {
         </div>
 
         <nav className="flex-1 p-4 overflow-y-auto overflow-x-hidden min-h-0 scrollbar-thin">
-          {Object.entries(organizedItems).map(([groupName, items]) => (
-            <div key={groupName} className="mb-6">
-              {!isCollapsed && groupName && (
-                <div className="text-xs font-semibold text-base-content/60 uppercase tracking-wider mb-3 px-2">
-                  {groupName}
-                </div>
-              )}
-              <ul className="menu p-0 w-full space-y-1">
-                {items.map((item) => renderMenuItem(item))}
-              </ul>
-            </div>
-          ))}
+          {Object.entries(organizedItems).map(([groupName, groupItems]) => {
+            const isGroupCollapsed = !isCollapsed && !!groupName && collapsedGroups.has(groupName);
+            return (
+              <div key={groupName} className="mb-4">
+                {!isCollapsed && groupName && (
+                  <button
+                    className="flex items-center justify-between w-full text-xs font-semibold text-base-content/60 uppercase tracking-wider mb-2 px-2 hover:text-base-content transition-colors cursor-pointer"
+                    onClick={() => toggleGroup(groupName)}
+                  >
+                    <span>{groupName}</span>
+                    {isGroupCollapsed
+                      ? <MdChevronRight className="w-4 h-4" />
+                      : <MdExpandMore className="w-4 h-4" />
+                    }
+                  </button>
+                )}
+                {!isGroupCollapsed && (
+                  <ul className="menu p-0 w-full space-y-1">
+                    {groupItems.map((item) => renderMenuItem(item))}
+                  </ul>
+                )}
+              </div>
+            );
+          })}
         </nav>
 
         <div className="p-4 border-t border-base-300 shrink-0">

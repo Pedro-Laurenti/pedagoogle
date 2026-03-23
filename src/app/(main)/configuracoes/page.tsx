@@ -4,6 +4,9 @@ import { open, save } from "@tauri-apps/plugin-dialog";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { invokeCmd } from "@/utils/tauri";
 import Toast from "@/components/Toast";
+import Modal from "@/components/Modal";
+import InputHora from "@/components/inputs/InputHora";
+import { MdUpdate } from "react-icons/md";
 import type { Configuracoes, ToastState, MolduraEstilo } from "@/types";
 
 interface ConfigForm {
@@ -24,6 +27,10 @@ interface ConfigForm {
   usar_professores: boolean;
   usar_frequencia: boolean;
   usar_recuperacao: boolean;
+  aulas_por_dia: number;
+  minutos_por_aula: number;
+  hora_entrada: string;
+  dias_letivos_semana: number;
   [k: string]: unknown;
 }
 
@@ -54,11 +61,17 @@ const EMPTY: ConfigForm = {
   usar_professores: true,
   usar_frequencia: true,
   usar_recuperacao: true,
+  aulas_por_dia: 6,
+  minutos_por_aula: 45,
+  hora_entrada: "07:00",
+  dias_letivos_semana: 5,
 };
 
 export default function ConfiguracoesPage() {
   const [form, setForm] = useState<ConfigForm>(EMPTY);
   const [toast, setToast] = useState<ToastState | null>(null);
+  const [novaVersao, setNovaVersao] = useState<string | null>(null);
+  const [checkingUpdate, setCheckingUpdate] = useState(false);
 
   useEffect(() => {
     invokeCmd<Configuracoes>("get_configuracoes").then((c) => {
@@ -70,6 +83,22 @@ export default function ConfiguracoesPage() {
   function notify(message: string, type: ToastState["type"] = "success") {
     setToast({ message, type });
     setTimeout(() => setToast(null), 3000);
+  }
+
+  async function checkUpdate() {
+    setCheckingUpdate(true);
+    try {
+      const tag = await invokeCmd<string | null>("check_update");
+      if (tag) {
+        setNovaVersao(tag);
+      } else {
+        notify("O aplicativo já está atualizado.");
+      }
+    } catch {
+      notify("Não foi possível verificar atualizações.", "error");
+    } finally {
+      setCheckingUpdate(false);
+    }
   }
 
   async function pickLogo() {
@@ -103,6 +132,10 @@ export default function ConfiguracoesPage() {
         usarProfessores: form.usar_professores,
         usarFrequencia: form.usar_frequencia,
         usarRecuperacao: form.usar_recuperacao,
+        aulasPorDia: form.aulas_por_dia,
+        minutosPorAula: form.minutos_por_aula,
+        horaEntrada: form.hora_entrada,
+        diasLetivosSemana: form.dias_letivos_semana,
       });
       document.documentElement.setAttribute("data-theme", form.tema);
       notify("Configurações salvas.");
@@ -379,14 +412,164 @@ export default function ConfiguracoesPage() {
         </div>
       </form>
 
+      <div className="divider">Carga Horária</div>
+      <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div>
+            <label className="label text-xs">Aulas por dia</label>
+            <input
+              type="number"
+              className="input w-full"
+              value={form.aulas_por_dia}
+              onChange={(e) => setForm({ ...form, aulas_por_dia: parseInt(e.target.value) || 1 })}
+              min={1}
+              max={20}
+            />
+          </div>
+          <div>
+            <label className="label text-xs">Minutos por aula</label>
+            <input
+              type="number"
+              className="input w-full"
+              value={form.minutos_por_aula}
+              onChange={(e) => setForm({ ...form, minutos_por_aula: parseInt(e.target.value) || 1 })}
+              min={1}
+              max={180}
+            />
+          </div>
+          <InputHora
+            label="Horário de entrada"
+            value={form.hora_entrada}
+            onChange={(v) => setForm({ ...form, hora_entrada: v })}
+          />
+          <div>
+            <label className="label text-xs">Dias letivos por semana</label>
+            <input
+              type="number"
+              className="input w-full"
+              value={form.dias_letivos_semana}
+              onChange={(e) => setForm({ ...form, dias_letivos_semana: parseInt(e.target.value) || 1 })}
+              min={1}
+              max={7}
+            />
+          </div>
+        </div>
+
+        <CargaHorariaResumo
+          aulasPorDia={form.aulas_por_dia}
+          minutosPorAula={form.minutos_por_aula}
+          horaEntrada={form.hora_entrada}
+          diasLetivosSemana={form.dias_letivos_semana}
+        />
+
+        <div className="pt-2 flex gap-3 flex-wrap">
+          <button type="submit" className="btn btn-primary">Salvar Configurações</button>
+        </div>
+      </form>
+
       <div className="divider">Banco de Dados</div>
       <div className="flex gap-3 flex-wrap">
         <button type="button" className="btn btn-outline" onClick={handleBackup}>Exportar backup</button>
         <button type="button" className="btn btn-outline btn-warning" onClick={handleRestore}>Restaurar backup</button>
       </div>
 
+      <div className="divider">Atualizações</div>
+      <div className="flex items-center gap-4 flex-wrap">
+        <button
+          type="button"
+          className="btn btn-outline"
+          onClick={checkUpdate}
+          disabled={checkingUpdate}
+        >
+          <MdUpdate size={18} />
+          {checkingUpdate ? "Verificando…" : "Verificar atualizações"}
+        </button>
+      </div>
+
+      <Modal
+        open={novaVersao !== null}
+        onClose={() => setNovaVersao(null)}
+        title="Nova versão disponível"
+        variant="info"
+        color="info"
+      >
+        <p className="text-sm">
+          Uma nova versão do Pedagoogle está disponível: <strong>{novaVersao}</strong>.
+        </p>
+        <p className="text-sm mt-2">
+          Acesse{" "}
+          <a
+            href="https://github.com/Pedro-Laurenti/pedagoogle/releases/latest"
+            target="_blank"
+            rel="noreferrer"
+            className="link link-primary"
+          >
+            github.com/Pedro-Laurenti/pedagoogle/releases/latest
+          </a>{" "}
+          para baixar a atualização.
+        </p>
+      </Modal>
+
       {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
     </div>
+  );
+}
+
+// Componente de resumo da carga horária calculada
+function CargaHorariaResumo({
+  aulasPorDia,
+  minutosPorAula,
+  horaEntrada,
+  diasLetivosSemana,
+}: {
+  aulasPorDia: number;
+  minutosPorAula: number;
+  horaEntrada: string;
+  diasLetivosSemana: number;
+}) {
+  const [h, m] = horaEntrada.split(":").map(Number);
+  const totalMin = aulasPorDia * minutosPorAula;
+  const enc = (h || 0) * 60 + (m || 0) + totalMin;
+  const encHora = `${Math.floor(enc / 60) % 24}`.padStart(2, "0");
+  const encMin = `${enc % 60}`.padStart(2, "0");
+  const encerramento = `${encHora}:${encMin}`;
+
+  const aulasSemana = aulasPorDia * diasLetivosSemana;
+  const horasSemana = (aulasSemana * minutosPorAula) / 60;
+
+  const rows = [
+    { label: "Semana", aulas: aulasSemana, horas: horasSemana },
+    { label: "Mês (4 sem.)", aulas: aulasSemana * 4, horas: horasSemana * 4 },
+    { label: "Bimestre (10 sem.)", aulas: aulasSemana * 10, horas: horasSemana * 10 },
+    { label: "Semestre (20 sem.)", aulas: aulasSemana * 20, horas: horasSemana * 20 },
+    { label: "Ano (40 sem.)", aulas: aulasSemana * 40, horas: horasSemana * 40 },
+  ];
+
+  return (
+    <fieldset className="fieldset">
+      <legend className="fieldset-legend">Resumo calculado (somente leitura)</legend>
+      <p className="text-sm mb-3">
+        Horário de encerramento: <strong>{encerramento}</strong>
+      </p>
+      <table className="table table-zebra w-full">
+        <thead>
+          <tr>
+            <th>Período</th>
+            <th className="text-right">Aulas</th>
+            <th className="text-right">Horas</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((r) => (
+            <tr key={r.label}>
+              <td>{r.label}</td>
+              <td className="text-right">{r.aulas}</td>
+              <td className="text-right">{r.horas.toFixed(1)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </fieldset>
   );
 }
 

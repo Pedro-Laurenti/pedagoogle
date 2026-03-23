@@ -19,6 +19,10 @@ pub struct Configuracoes {
     pub usar_professores: bool,
     pub usar_frequencia: bool,
     pub usar_recuperacao: bool,
+    pub aulas_por_dia: i64,
+    pub minutos_por_aula: i64,
+    pub hora_entrada: String,
+    pub dias_letivos_semana: i64,
 }
 
 #[derive(Serialize, Deserialize, Clone)]
