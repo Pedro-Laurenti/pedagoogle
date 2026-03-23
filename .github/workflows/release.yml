@@ -23,14 +23,32 @@ jobs:
       # ── checkout ────────────────────────────────────────────────────────────
       - uses: actions/checkout@v4
 
+      # ── Sincroniza versão dos arquivos com a tag ─────────────────────────────
+      - name: Bump version from tag
+        shell: bash
+        run: |
+          VERSION="${{ github.ref_name }}"
+          VERSION="${VERSION#v}"
+          sed -i "0,/^version = /s/^version = .*/version = \"$VERSION\"/" src-tauri/Cargo.toml
+          node -e "
+            const fs = require('fs');
+            ['src-tauri/tauri.conf.json', 'src/package.json'].forEach(f => {
+              const j = JSON.parse(fs.readFileSync(f, 'utf8'));
+              j.version = '$VERSION';
+              fs.writeFileSync(f, JSON.stringify(j, null, 2) + '\n');
+            });
+          "
+
       # ── Node.js ─────────────────────────────────────────────────────────────
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
           node-version: "20"
+          cache: "npm"
+          cache-dependency-path: src/package-lock.json
 
       - name: Install frontend deps
-        run: npm install
+        run: npm ci
         working-directory: src
 
       - name: Build frontend
@@ -47,6 +65,7 @@ jobs:
         uses: swatinem/rust-cache@v2
         with:
           workspaces: "src-tauri -> target"
+          cache-on-failure: true
 
       # ── Linux system deps ───────────────────────────────────────────────────
       - name: Install Linux dependencies
@@ -61,15 +80,12 @@ jobs:
             libgtk-3-dev
 
       # ── Build ───────────────────────────────────────────────────────────────
-      - name: Install Tauri CLI
-        run: npm install -g @tauri-apps/cli@^2
-
       - name: Build Tauri app
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          tauriScript: npx tauri
+          tauriScript: src/node_modules/.bin/tauri
           args: ${{ matrix.args }}
           tagName: ${{ github.ref_name }}
           releaseName: "Pedagoogle ${{ github.ref_name }}"
