@@ -20,6 +20,10 @@ interface ConfigForm {
   ano_letivo: string;
   tamanho_fonte: number;
   tema: string;
+  usar_turmas: boolean;
+  usar_professores: boolean;
+  usar_frequencia: boolean;
+  usar_recuperacao: boolean;
   [k: string]: unknown;
 }
 
@@ -46,6 +50,10 @@ const EMPTY: ConfigForm = {
   ano_letivo: "2026",
   tamanho_fonte: 11,
   tema: "light",
+  usar_turmas: true,
+  usar_professores: true,
+  usar_frequencia: true,
+  usar_recuperacao: true,
 };
 
 export default function ConfiguracoesPage() {
@@ -54,7 +62,7 @@ export default function ConfiguracoesPage() {
 
   useEffect(() => {
     invokeCmd<Configuracoes>("get_configuracoes").then((c) => {
-      setForm({ ...c });
+      setForm({ ...EMPTY, ...c });
       document.documentElement.setAttribute("data-theme", c.tema || "light");
     }).catch(() => {});
   }, []);
@@ -91,6 +99,10 @@ export default function ConfiguracoesPage() {
         anoLetivo: form.ano_letivo,
         tamanhoFonte: form.tamanho_fonte,
         tema: form.tema,
+        usarTurmas: form.usar_turmas,
+        usarProfessores: form.usar_professores,
+        usarFrequencia: form.usar_frequencia,
+        usarRecuperacao: form.usar_recuperacao,
       });
       document.documentElement.setAttribute("data-theme", form.tema);
       notify("Configurações salvas.");
@@ -337,6 +349,30 @@ export default function ConfiguracoesPage() {
             <option value="dark">Escuro</option>
           </select>
         </fieldset>
+
+        <div className="divider">Módulos ativos</div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          {([
+            { key: "usar_turmas", label: "Turmas", desc: "Gerenciar turmas e vínculos" },
+            { key: "usar_professores", label: "Professores", desc: "Cadastro e cronograma de professores" },
+            { key: "usar_frequencia", label: "Frequência", desc: "Controle de presença" },
+            { key: "usar_recuperacao", label: "Recuperação", desc: "Provas e notas de recuperação" },
+          ] as const).map(({ key, label, desc }) => (
+            <label key={key} className="cursor-pointer border border-base-300 rounded-lg p-3 flex items-start gap-3 hover:border-base-content/30 transition-colors">
+              <input
+                type="checkbox"
+                className="checkbox mt-0.5"
+                checked={!!form[key]}
+                onChange={(e) => setForm({ ...form, [key]: e.target.checked })}
+              />
+              <div>
+                <div className="font-medium text-sm">{label}</div>
+                <div className="text-xs opacity-60">{desc}</div>
+              </div>
+            </label>
+          ))}
+        </div>
 
         <div className="pt-2 flex gap-3 flex-wrap">
           <button type="submit" className="btn btn-primary">Salvar Configurações</button>

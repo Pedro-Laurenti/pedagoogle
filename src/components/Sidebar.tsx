@@ -7,11 +7,18 @@ import { menuItems, MenuItem } from '@/lib/navigation';
 import { MdExpandMore, MdKeyboardDoubleArrowRight, MdDashboard } from 'react-icons/md';
 import ThemeToggle from '@/components/ThemeToggle';
 import packageJson from '@/package.json';
+import { invokeCmd } from '@/utils/tauri';
+import type { Configuracoes } from '@/types';
 
 export default function Sidebar() {
   const pathname = useCurrentPage();
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [expandedItems, setExpandedItems] = useState<Set<string>>(new Set());
+  const [config, setConfig] = useState<Configuracoes | null>(null);
+
+  useEffect(() => {
+    invokeCmd<Configuracoes>('get_configuracoes').then(setConfig).catch(() => {});
+  }, []);
 
   useEffect(() => {
     const saved = localStorage.getItem('sidebar-collapsed');
@@ -52,7 +59,11 @@ export default function Sidebar() {
     if (drawerToggle) drawerToggle.checked = false;
   };
 
-  const sidebarItems = menuItems.filter((item) => item.showInSidebar !== false);
+  const sidebarItems = menuItems.filter((item) => {
+    if (item.showInSidebar === false) return false;
+    if (item.feature && config && !config[item.feature]) return false;
+    return true;
+  });
 
   const organizedItems = sidebarItems.reduce((acc, item) => {
     const group = item.group || '';

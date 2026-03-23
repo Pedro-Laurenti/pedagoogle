@@ -21,6 +21,7 @@ export interface MenuItem {
   group?: string;
   showInSidebar?: boolean;
   parentHref?: string;
+  feature?: "usar_turmas" | "usar_professores" | "usar_frequencia" | "usar_recuperacao";
 }
 
 export const menuItems: MenuItem[] = [
@@ -37,6 +38,7 @@ export const menuItems: MenuItem[] = [
     icon: MdPersonOutline,
     description: "Cadastro de professores",
     showInSidebar: true,
+    feature: "usar_professores",
   },
   {
     href: "/materias",
@@ -58,6 +60,7 @@ export const menuItems: MenuItem[] = [
     icon: MdGroups,
     description: "Gerenciar turmas",
     showInSidebar: true,
+    feature: "usar_turmas",
   },
   {
     href: "/alunos",
@@ -86,6 +89,7 @@ export const menuItems: MenuItem[] = [
     icon: MdFactCheck,
     description: "Controle de presença",
     showInSidebar: true,
+    feature: "usar_frequencia",
   },
   {
     href: "/configuracoes",

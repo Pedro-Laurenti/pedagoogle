@@ -1,9 +1,18 @@
 "use client";
 import { useState, useEffect, useCallback } from "react";
 import { MdAdd, MdEdit, MdDelete } from "react-icons/md";
+import * as MdIcons from "react-icons/md";
 import { invokeCmd } from "@/utils/tauri";
 import Toast from "@/components/Toast";
+import ColorPicker from "@/components/ColorPicker";
+import IconPicker from "@/components/IconPicker";
 import type { Materia, Professor, Turma, ToastState } from "@/types";
+
+const MATERIA_ICONS = [
+  'MdBook', 'MdScience', 'MdCalculate', 'MdLanguage', 'MdHistoryEdu',
+  'MdSportsFootball', 'MdMusicNote', 'MdPalette', 'MdComputer', 'MdBiotech',
+  'MdPublic', 'MdFunctions', 'MdMenuBook', 'MdSchool', 'MdStar',
+];
 
 interface MateriaForm {
   nome: string;
@@ -12,9 +21,10 @@ interface MateriaForm {
   turma_id: number | null;
   carga_horaria_semanal: number;
   cor: string;
+  icone: string;
 }
 
-const EMPTY: MateriaForm = { nome: "", descricao: "", professor_id: null, turma_id: null, carga_horaria_semanal: 0, cor: "#6366f1" };
+const EMPTY: MateriaForm = { nome: "", descricao: "", professor_id: null, turma_id: null, carga_horaria_semanal: 0, cor: "#6366f1", icone: "MdBook" };
 
 export default function MateriasPage() {
   const [materias, setMaterias] = useState<Materia[]>([]);
@@ -52,18 +62,24 @@ export default function MateriasPage() {
 
   function openEdit(m: Materia) {
     setEditing(m.id);
-    setForm({ nome: m.nome, descricao: m.descricao, professor_id: m.professor_id, turma_id: m.turma_id, carga_horaria_semanal: m.carga_horaria_semanal, cor: m.cor });
+    setForm({ nome: m.nome, descricao: m.descricao, professor_id: m.professor_id, turma_id: m.turma_id, carga_horaria_semanal: m.carga_horaria_semanal, cor: m.cor, icone: m.icone ?? 'MdBook' });
     setModal(true);
   }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     try {
+      const payload = {
+        nome: form.nome, descricao: form.descricao,
+        professorId: form.professor_id, turmaId: form.turma_id,
+        cargaHorariaSemanal: form.carga_horaria_semanal,
+        cor: form.cor, icone: form.icone,
+      };
       if (editing !== null) {
-        await invokeCmd("update_materia", { id: editing, ...form });
+        await invokeCmd("update_materia", { id: editing, ...payload });
         notify("Matéria atualizada.");
       } else {
-        await invokeCmd("create_materia", form as unknown as Record<string, unknown>);
+        await invokeCmd("create_materia", payload);
         notify("Matéria criada.");
       }
       setModal(false);
@@ -125,14 +141,16 @@ export default function MateriasPage() {
             </tr>
           </thead>
           <tbody>
-            {materiasFiltradas.map((m) => (
+            {materiasFiltradas.map((m) => {
+              const Icon = (MdIcons as Record<string, React.ElementType>)[m.icone ?? 'MdBook'];
+              return (
               <tr key={m.id}>
                 <td>
-                  <span
-                    className="inline-block w-5 h-5 rounded"
-                    style={{ backgroundColor: m.cor }}
-                    title={m.cor}
-                  />
+                  <div className="flex items-center gap-2">
+                    <span className="inline-flex w-7 h-7 rounded items-center justify-center" style={{ backgroundColor: m.cor }}>
+                      {Icon && <Icon size={16} className="text-white" />}
+                    </span>
+                  </div>
                 </td>
                 <td>{m.nome}</td>
                 <td>{m.turma_nome ?? "—"}</td>
@@ -148,7 +166,8 @@ export default function MateriasPage() {
                   </button>
                 </td>
               </tr>
-            ))}
+              );
+            })}
           </tbody>
         </table>
       </div>
@@ -198,15 +217,8 @@ export default function MateriasPage() {
                   onChange={(e) => setForm({ ...form, carga_horaria_semanal: Number(e.target.value) })}
                 />
               </fieldset>
-              <fieldset className="fieldset">
-                <legend className="fieldset-legend">Cor</legend>
-                <input
-                  type="color"
-                  className="input w-full h-10"
-                  value={form.cor}
-                  onChange={(e) => setForm({ ...form, cor: e.target.value })}
-                />
-              </fieldset>
+              <ColorPicker value={form.cor} onChange={(c) => setForm({ ...form, cor: c })} label="Cor" />
+              <IconPicker value={form.icone} onChange={(i) => setForm({ ...form, icone: i })} label="Ícone" icons={MATERIA_ICONS} iconLib="md" />
               <fieldset className="fieldset">
                 <legend className="fieldset-legend">Descrição</legend>
                 <input className="input w-full" value={form.descricao} onChange={(e) => setForm({ ...form, descricao: e.target.value })} />

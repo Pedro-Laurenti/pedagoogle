@@ -7,6 +7,10 @@
     "core:default",
     "dialog:allow-save",
     "dialog:allow-open",
-    "fs:allow-read-file"
+    "fs:allow-read-file",
+    "fs:allow-copy-file",
+    "fs:allow-mkdir",
+    "fs:scope-home-recursive",
+    "fs:scope-appdata-recursive"
   ]
 }

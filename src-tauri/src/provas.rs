@@ -13,10 +13,11 @@ fn map_db_err(e: rusqlite::Error) -> String {
     s
 }
 
-const PROVA_SELECT: &str = "SELECT id, titulo, descricao, materia_id, data, rodape, margens, valor_total,
-        COALESCE(escola_override,''), COALESCE(cidade_override,''), turma_id,
-        COALESCE(is_recuperacao,0), COALESCE(qr_gabarito,0),
-        COALESCE(duas_colunas,0), COALESCE(paisagem,0), COALESCE(updated_at,'') FROM provas";
+const PROVA_SELECT: &str = "SELECT p.id, p.titulo, p.descricao, p.materia_id, p.data, p.rodape, p.margens, p.valor_total,
+        COALESCE(p.escola_override,''), COALESCE(p.cidade_override,''), p.turma_id,
+        COALESCE(p.is_recuperacao,0), COALESCE(p.qr_gabarito,0),
+        COALESCE(p.duas_colunas,0), COALESCE(p.paisagem,0), COALESCE(p.updated_at,''),
+        (SELECT COUNT(*) FROM questoes q WHERE q.prova_id = p.id) FROM provas p";
 
 fn map_prova(r: &rusqlite::Row) -> rusqlite::Result<Prova> {
     Ok(Prova {
@@ -30,13 +31,14 @@ fn map_prova(r: &rusqlite::Row) -> rusqlite::Result<Prova> {
         duas_colunas: r.get::<_, i64>(13)? != 0,
         paisagem: r.get::<_, i64>(14)? != 0,
         updated_at: r.get(15)?,
+        questoes_count: r.get(16)?,
     })
 }
 
 #[tauri::command]
 pub fn list_provas(state: tauri::State<'_, DbState>) -> Result<Vec<Prova>, String> {
     let conn = state.lock().map_err(|e| e.to_string())?;
-    let mut stmt = conn.prepare(&format!("{} ORDER BY id DESC", PROVA_SELECT)).map_err(|e| e.to_string())?;
+    let mut stmt = conn.prepare(&format!("{} ORDER BY p.id DESC", PROVA_SELECT)).map_err(|e| e.to_string())?;
     let rows = stmt.query_map([], map_prova).map_err(|e| e.to_string())?;
     rows.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())
 }
@@ -44,7 +46,7 @@ pub fn list_provas(state: tauri::State<'_, DbState>) -> Result<Vec<Prova>, Strin
 #[tauri::command]
 pub fn list_provas_page(state: tauri::State<'_, DbState>, page: i64, per_page: i64) -> Result<Vec<Prova>, String> {
     let conn = state.lock().map_err(|e| e.to_string())?;
-    let mut stmt = conn.prepare(&format!("{} ORDER BY id DESC LIMIT ?1 OFFSET (?2-1)*?1", PROVA_SELECT)).map_err(|e| e.to_string())?;
+    let mut stmt = conn.prepare(&format!("{} ORDER BY p.id DESC LIMIT ?1 OFFSET (?2-1)*?1", PROVA_SELECT)).map_err(|e| e.to_string())?;
     let rows = stmt.query_map(params![per_page, page], map_prova).map_err(|e| e.to_string())?;
     rows.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())
 }
@@ -53,7 +55,7 @@ pub fn list_provas_page(state: tauri::State<'_, DbState>, page: i64, per_page: i
 pub fn get_prova(state: tauri::State<'_, DbState>, id: i64) -> Result<Prova, String> {
     let conn = state.lock().map_err(|e| e.to_string())?;
     conn.query_row(
-        &format!("{} WHERE id=?1", PROVA_SELECT),
+        &format!("{} WHERE p.id=?1", PROVA_SELECT),
         params![id],
         map_prova,
     ).map_err(|e| e.to_string())

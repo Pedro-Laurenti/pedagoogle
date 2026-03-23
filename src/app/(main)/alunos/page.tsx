@@ -1,7 +1,11 @@
 "use client";
 import { useState, useEffect, useCallback, useRef } from "react";
-import { MdAdd, MdEdit, MdDelete, MdUploadFile, MdPerson } from "react-icons/md";
+import { MdAdd, MdEdit, MdDelete, MdUploadFile, MdPerson, MdPhotoCamera } from "react-icons/md";
 import { invokeCmd } from "@/utils/tauri";
+import { open } from "@tauri-apps/plugin-dialog";
+import { copyFile, mkdir } from "@tauri-apps/plugin-fs";
+import { appDataDir } from "@tauri-apps/api/path";
+import { convertFileSrc } from "@tauri-apps/api/core";
 import Toast from "@/components/Toast";
 import Pagination from "@/components/Pagination";
 import type { Aluno, Turma, AlunoCsvRow, ToastState } from "@/types";
@@ -62,11 +66,12 @@ export default function AlunosPage() {
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     try {
+      const payload = { nome: form.nome, matricula: form.matricula, turmaId: form.turma_id, fotoPath: form.foto_path };
       if (editing !== null) {
-        await invokeCmd("update_aluno", { id: editing, ...form });
+        await invokeCmd("update_aluno", { id: editing, ...payload });
         notify("Aluno atualizado.");
       } else {
-        await invokeCmd("create_aluno", form as unknown as Record<string, unknown>);
+        await invokeCmd("create_aluno", payload);
         notify("Aluno criado.");
       }
       setModal(false);
@@ -74,6 +79,34 @@ export default function AlunosPage() {
     } catch {
       notify("Erro ao salvar.", "error");
     }
+  }
+
+  async function pickFoto() {
+    const selected = await open({
+      filters: [{ name: "Imagem", extensions: ["png", "jpg", "jpeg", "gif", "webp", "bmp"] }],
+      multiple: false,
+    });
+    if (!selected || typeof selected !== "string") return;
+    try {
+      const dataDir = await appDataDir();
+      const fotosDir = `${dataDir}/pedagoogle/fotos/alunos`;
+      await mkdir(fotosDir, { recursive: true });
+      const fileName = selected.split(/[\/\\]/).pop() ?? `foto_${Date.now()}.jpg`;
+      const dest = `${fotosDir}/${fileName}`;
+      await copyFile(selected, dest);
+      setForm((f) => ({ ...f, foto_path: dest }));
+    } catch (e) {
+      notify(`Erro ao copiar foto: ${e}`, "error");
+    }
+  }
+
+  function fotoSrc(foto_path: string) {
+    if (!foto_path) return "";
+    // If it's already a full path, use directly; otherwise it's just a filename
+    if (foto_path.includes("/") || foto_path.includes("\\")) {
+      return convertFileSrc(foto_path);
+    }
+    return foto_path; // will be resolved when appDataDir is known
   }
 
   async function handleDelete(id: number) {
@@ -175,7 +208,7 @@ export default function AlunosPage() {
               <tr key={a.id}>
                 <td>
                   {a.foto_path ? (
-                    <img src={a.foto_path} className="w-8 h-8 rounded-full object-cover" alt={a.nome} />
+                    <img src={convertFileSrc(a.foto_path)} className="w-8 h-8 rounded-full object-cover" alt={a.nome} onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />
                   ) : (
                     <MdPerson size={32} className="text-base-content/40" />
                   )}
@@ -234,13 +267,25 @@ export default function AlunosPage() {
                 </select>
               </fieldset>
               <fieldset className="fieldset">
-                <legend className="fieldset-legend">Foto (caminho)</legend>
-                <input
-                  className="input w-full"
-                  value={form.foto_path}
-                  onChange={(e) => setForm({ ...form, foto_path: e.target.value })}
-                  placeholder="/caminho/para/foto.jpg"
-                />
+                <legend className="fieldset-legend">Foto</legend>
+                <div className="flex items-center gap-3">
+                  {form.foto_path && (
+                    <img
+                      src={convertFileSrc(form.foto_path)}
+                      className="w-16 h-16 rounded-full object-cover border"
+                      alt="Foto"
+                      onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
+                    />
+                  )}
+                  <button type="button" className="btn btn-outline btn-sm gap-1" onClick={pickFoto}>
+                    <MdPhotoCamera size={16} /> Escolher foto
+                  </button>
+                  {form.foto_path && (
+                    <button type="button" className="btn btn-ghost btn-xs text-error" onClick={() => setForm((f) => ({ ...f, foto_path: "" }))}>
+                      Remover
+                    </button>
+                  )}
+                </div>
               </fieldset>
               <div className="modal-action">
                 <button type="button" className="btn" onClick={() => setModal(false)}>Cancelar</button>

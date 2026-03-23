@@ -1,12 +1,13 @@
 "use client";
 import { useState, useEffect, useCallback } from "react";
-import { MdAdd, MdEdit, MdDelete, MdCopyAll, MdLibraryBooks } from "react-icons/md";
+import { MdAdd, MdEdit, MdDelete, MdCopyAll, MdLibraryBooks, MdSearch } from "react-icons/md";
 import { invokeCmd } from "@/utils/tauri";
 import Toast from "@/components/Toast";
 import ProvaEditor from "./ProvaEditor";
 import type { Prova, Materia, Turma, BancoQuestao, ToastState } from "@/types";
 
 type Aba = "provas" | "banco";
+type CategoriaFiltro = "todas" | "normal" | "recuperacao";
 
 interface BancoForm {
   tipo: string; enunciado: string; opcoes: string; valor: string; tags: string; dificuldade: string;
@@ -27,6 +28,12 @@ export default function ProvasPage() {
   const [bancoModal, setBancoModal] = useState(false);
   const [bancoForm, setBancoForm] = useState<BancoForm>(EMPTY_BANCO);
   const [bancoEditing, setBancoEditing] = useState<number | null>(null);
+  // Filters
+  const [filtroMateria, setFiltroMateria] = useState<number | null>(null);
+  const [filtroCategoria, setFiltroCategoria] = useState<CategoriaFiltro>("todas");
+  const [filtroBusca, setFiltroBusca] = useState("");
+  const [filtroSemestre, setFiltroSemestre] = useState("");
+  const [filtroBimestre, setFiltroBimestre] = useState<"" | "1" | "2" | "3" | "4">("");
 
   const load = useCallback(async () => {
     const [p, m, t] = await Promise.all([invokeCmd<Prova[]>("list_provas"), invokeCmd<Materia[]>("list_materias"), invokeCmd<Turma[]>("list_turmas")]);
@@ -106,6 +113,27 @@ export default function ProvasPage() {
     }
   }
 
+  function dataToBimestre(data: string | null | undefined): "1" | "2" | "3" | "4" | null {
+    if (!data) return null;
+    const month = parseInt(data.slice(5, 7), 10);
+    if (month >= 1 && month <= 3) return "1";
+    if (month >= 4 && month <= 6) return "2";
+    if (month >= 7 && month <= 9) return "3";
+    return "4";
+  }
+
+  const provasFiltradas = provas
+    .filter((p) => {
+      if (filtroMateria !== null && p.materia_id !== filtroMateria) return false;
+      if (filtroCategoria === "normal" && p.is_recuperacao) return false;
+      if (filtroCategoria === "recuperacao" && !p.is_recuperacao) return false;
+      if (filtroBusca && !p.titulo.toLowerCase().includes(filtroBusca.toLowerCase())) return false;
+      if (filtroSemestre && p.data && !p.data.startsWith(filtroSemestre)) return false;
+      if (filtroBimestre && dataToBimestre(p.data) !== filtroBimestre) return false;
+      return true;
+    })
+    .sort((a, b) => (b.data || "").localeCompare(a.data || ""));
+
   const bancoFiltrado = banco.filter((q) => {
     const t = bancoBusca.toLowerCase();
     return !t || q.enunciado.toLowerCase().includes(t) || q.tags.toLowerCase().includes(t);
@@ -146,42 +174,98 @@ export default function ProvasPage() {
       </div>
 
       {aba === "provas" && (
-        <div className="overflow-x-auto">
-          <table className="table table-zebra w-full">
-            <thead>
-              <tr>
-                <th>Título</th>
-                <th>Matéria</th>
-                <th>Data</th>
-                <th>Valor</th>
-                <th></th>
-              </tr>
-            </thead>
-            <tbody>
-              {provas.map((p) => (
-                <tr key={p.id}>
-                  <td>
-                    {p.titulo}
-                    {p.is_recuperacao && <span className="badge badge-warning badge-xs ml-2">Recuperação</span>}
-                  </td>
-                  <td>{materias.find((m) => m.id === p.materia_id)?.nome ?? "-"}</td>
-                  <td>{p.data}</td>
-                  <td>{p.valor_total} pt</td>
-                  <td className="flex gap-2">
-                    <button className="btn btn-sm btn-ghost" onClick={() => setEditing(p.id)}>
-                      <MdEdit />
-                    </button>
-                    <button className="btn btn-sm btn-ghost" onClick={() => handleDuplicate(p.id)}>
-                      <MdCopyAll />
-                    </button>
-                    <button className="btn btn-sm btn-ghost text-error" onClick={() => handleDelete(p.id)}>
-                      <MdDelete />
-                    </button>
-                  </td>
-                </tr>
+        <div>
+          {/* Filter bar */}
+          <div className="flex flex-wrap gap-3 mb-6 p-4 bg-base-200 rounded-xl">
+            <div className="relative flex-1 min-w-48">
+              <MdSearch className="absolute left-3 top-1/2 -translate-y-1/2 text-base-content/50" size={18} />
+              <input
+                className="input pl-9 w-full"
+                placeholder="Buscar por título..."
+                value={filtroBusca}
+                onChange={(e) => setFiltroBusca(e.target.value)}
+              />
+            </div>
+            <select
+              className="select"
+              value={filtroMateria ?? ""}
+              onChange={(e) => setFiltroMateria(e.target.value === "" ? null : Number(e.target.value))}
+            >
+              <option value="">Todas as matérias</option>
+              {materias.map((m) => <option key={m.id} value={m.id}>{m.nome}</option>)}
+            </select>
+            <select
+              className="select"
+              value={filtroSemestre}
+              onChange={(e) => setFiltroSemestre(e.target.value)}
+            >
+              <option value="">Todos os semestres</option>
+              {[...new Set(provas.map((p) => p.data?.slice(0, 7)).filter(Boolean))].sort().reverse().map((s) => (
+                <option key={s} value={s!}>{s}</option>
               ))}
-            </tbody>
-          </table>
+            </select>
+            <select
+              className="select"
+              value={filtroBimestre}
+              onChange={(e) => setFiltroBimestre(e.target.value as "" | "1" | "2" | "3" | "4")}
+            >
+              <option value="">Todos os bimestres</option>
+              <option value="1">1º Bimestre (Jan–Mar)</option>
+              <option value="2">2º Bimestre (Abr–Jun)</option>
+              <option value="3">3º Bimestre (Jul–Set)</option>
+              <option value="4">4º Bimestre (Out–Dez)</option>
+            </select>
+            <select
+              className="select"
+              value={filtroCategoria}
+              onChange={(e) => setFiltroCategoria(e.target.value as CategoriaFiltro)}
+            >
+              <option value="todas">Todas</option>
+              <option value="normal">Provas normais</option>
+              <option value="recuperacao">Recuperação</option>
+            </select>
+          </div>
+
+          {/* Cards */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            {provasFiltradas.map((p) => {
+              const materia = materias.find((m) => m.id === p.materia_id);
+              return (
+                <div key={p.id} className="card bg-base-200 shadow hover:shadow-md transition-shadow">
+                  <div className="card-body gap-2">
+                    <div className="flex items-start justify-between gap-2">
+                      <h3 className="card-title text-base leading-tight">{p.titulo}</h3>
+                      {p.is_recuperacao && (
+                        <span className="badge badge-warning badge-sm shrink-0">Recuperação</span>
+                      )}
+                    </div>
+                    {materia && (
+                      <div className="flex items-center gap-2 text-sm">
+                        <span
+                          className="inline-block w-3 h-3 rounded-full shrink-0"
+                          style={{ backgroundColor: materia.cor }}
+                        />
+                        <span className="text-base-content/70">{materia.nome}</span>
+                      </div>
+                    )}
+                    <div className="flex items-center gap-4 text-xs text-base-content/60 mt-1">
+                      {p.data && <span>📅 {p.data}</span>}
+                      <span>📝 {p.questoes_count} questão(ões)</span>
+                      <span>💯 {p.valor_total} pt</span>
+                    </div>
+                    <div className="card-actions justify-end mt-2">
+                      <button className="btn btn-xs btn-ghost" onClick={() => setEditing(p.id)}><MdEdit size={14} /> Editar</button>
+                      <button className="btn btn-xs btn-ghost" onClick={() => handleDuplicate(p.id)}><MdCopyAll size={14} /></button>
+                      <button className="btn btn-xs btn-ghost text-error" onClick={() => handleDelete(p.id)}><MdDelete size={14} /></button>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+            {provasFiltradas.length === 0 && (
+              <div className="col-span-full text-center py-12 text-base-content/40">Nenhuma prova encontrada.</div>
+            )}
+          </div>
         </div>
       )}
 

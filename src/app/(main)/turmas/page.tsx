@@ -49,10 +49,10 @@ export default function TurmasPage() {
     e.preventDefault();
     try {
       if (editing !== null) {
-        await invokeCmd("update_turma", { id: editing, ...form });
+        await invokeCmd("update_turma", { id: editing, nome: form.nome, anoLetivo: form.ano_letivo, turno: form.turno });
         notify("Turma atualizada.");
       } else {
-        await invokeCmd("create_turma", form);
+        await invokeCmd("create_turma", { nome: form.nome, anoLetivo: form.ano_letivo, turno: form.turno });
         notify("Turma criada.");
       }
       setModal(false);

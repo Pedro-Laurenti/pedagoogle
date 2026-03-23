@@ -1,14 +1,17 @@
 import { useState, useRef, useEffect } from 'react';
 import * as FaIcons from 'react-icons/fa';
+import * as MdIcons from 'react-icons/md';
 import { FaChevronDown } from 'react-icons/fa';
 
 interface IconPickerProps {
   value: string;
   onChange: (icon: string) => void;
   label?: string;
+  icons?: string[];
+  iconLib?: 'fa' | 'md';
 }
 
-const ICON_LIBRARY = [
+const FA_ICON_LIBRARY = [
   'FaWallet', 'FaMoneyBillWave', 'FaUniversity', 'FaPiggyBank', 'FaCreditCard',
   'FaCoins', 'FaChartLine', 'FaDollarSign', 'FaShoppingCart', 'FaShoppingBag',
   'FaUtensils', 'FaCoffee', 'FaBeer', 'FaPizza', 'FaHamburger',
@@ -21,12 +24,20 @@ const ICON_LIBRARY = [
   'FaTshirt', 'FaShoePrints', 'FaGem', 'FaGift', 'FaPaw'
 ];
 
-export default function IconPicker({ value, onChange, label }: IconPickerProps) {
+function resolveIcon(iconName: string) {
+  if (iconName.startsWith('Md')) {
+    return (MdIcons as unknown as Record<string, React.ElementType>)[iconName];
+  }
+  return (FaIcons as unknown as Record<string, React.ElementType>)[iconName];
+}
+
+export default function IconPicker({ value, onChange, label, icons, iconLib = 'fa' }: IconPickerProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const dropdownRef = useRef<HTMLDivElement>(null);
 
-  const SelectedIcon = (FaIcons as any)[value] || FaIcons.FaQuestion;
+  const ICON_LIBRARY = icons ?? (iconLib === 'md' ? [] : FA_ICON_LIBRARY);
+  const SelectedIcon = resolveIcon(value) || FaIcons.FaQuestion;
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -34,12 +45,11 @@ export default function IconPicker({ value, onChange, label }: IconPickerProps) 
         setIsOpen(false);
       }
     };
-
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  const filteredIcons = ICON_LIBRARY.filter(iconName => 
+  const filteredIcons = ICON_LIBRARY.filter(iconName =>
     iconName.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
@@ -76,14 +86,14 @@ export default function IconPicker({ value, onChange, label }: IconPickerProps) 
             <div className="p-3 max-h-80 overflow-y-auto">
               <div className="grid grid-cols-8 gap-2">
                 {filteredIcons.map((iconName) => {
-                  const Icon = (FaIcons as any)[iconName] || FaIcons.FaQuestion;
+                  const Icon = resolveIcon(iconName) || FaIcons.FaQuestion;
                   return (
                     <button
                       key={iconName}
                       type="button"
                       className={`w-10 h-10 rounded-lg flex items-center justify-center transition-all hover:scale-110 ${
-                        value === iconName 
-                          ? 'bg-primary text-primary-content ring-2 ring-primary scale-110' 
+                        value === iconName
+                          ? 'bg-primary text-primary-content ring-2 ring-primary scale-110'
                           : 'bg-base-200 hover:bg-base-300'
                       }`}
                       onClick={() => {

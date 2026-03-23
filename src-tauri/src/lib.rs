@@ -47,6 +47,9 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             list_professores, create_professor, update_professor, delete_professor,
+            set_professor_materias, set_professor_turmas,
+            list_professor_materias, list_professor_turmas,
+            list_professor_cronograma, save_professor_cronograma,
             list_materias, create_materia, update_materia, delete_materia,
             list_alunos, create_aluno, update_aluno, delete_aluno,
             preview_import_alunos_csv, confirm_import_alunos,
@@ -58,6 +61,7 @@ pub fn run() {
             list_banco_questoes, create_banco_questao, update_banco_questao, delete_banco_questao, import_from_banco,
             list_banco_questoes_page,
             list_notas, create_nota, update_nota, delete_nota,
+            list_categoria_lancamentos, create_categoria_lancamento, update_categoria_lancamento, delete_categoria_lancamento,
             list_aulas, create_aula, update_aula, delete_aula, copy_semestre,
             export_prova_pdf, export_prova_word, export_gabarito_pdf, export_boletim_pdf, export_prova_pdf_embaralhada,
             get_configuracoes, save_configuracoes, backup_database, restore_database,

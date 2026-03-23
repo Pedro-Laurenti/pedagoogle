@@ -1,37 +1,47 @@
 "use client";
 import { useState, useEffect, useCallback } from "react";
-import { MdAdd, MdEdit, MdDelete, MdPictureAsPdf } from "react-icons/md";
+import { MdAdd, MdEdit, MdDelete, MdPictureAsPdf, MdSettings } from "react-icons/md";
 import { invokeCmd } from "@/utils/tauri";
 import { save } from "@tauri-apps/plugin-dialog";
 import Toast from "@/components/Toast";
-import type { Nota, Aluno, Materia, Prova, ToastState } from "@/types";
+import ColorPicker from "@/components/ColorPicker";
+import type { Nota, Aluno, Materia, Prova, CategoriaLancamento, ToastState } from "@/types";
 
-interface NotaForm { aluno_id: string; prova_id: string; descricao: string; valor: string; [k: string]: unknown; }
+interface NotaForm { aluno_id: string; prova_id: string; descricao: string; valor: string; categoria_id: string; [k: string]: unknown; }
+interface CatForm { nome: string; cor: string; }
 
-const EMPTY: NotaForm = { aluno_id: "", prova_id: "", descricao: "", valor: "" };
+const EMPTY: NotaForm = { aluno_id: "", prova_id: "", descricao: "", valor: "", categoria_id: "" };
+const EMPTY_CAT: CatForm = { nome: "", cor: "#6366f1" };
 
 export default function NotasPage() {
   const [notas, setNotas] = useState<Nota[]>([]);
   const [alunos, setAlunos] = useState<Aluno[]>([]);
   const [materias, setMaterias] = useState<Materia[]>([]);
   const [provas, setProvas] = useState<Prova[]>([]);
+  const [categorias, setCategorias] = useState<CategoriaLancamento[]>([]);
   const [form, setForm] = useState<NotaForm>(EMPTY);
   const [editing, setEditing] = useState<number | null>(null);
   const [modal, setModal] = useState(false);
   const [filterAluno, setFilterAluno] = useState("");
   const [toast, setToast] = useState<ToastState | null>(null);
+  // Categoria CRUD modal
+  const [catModal, setCatModal] = useState(false);
+  const [catForm, setCatForm] = useState<CatForm>(EMPTY_CAT);
+  const [catEditing, setCatEditing] = useState<number | null>(null);
 
   const load = useCallback(async () => {
-    const [n, a, p, m] = await Promise.all([
+    const [n, a, p, m, cats] = await Promise.all([
       invokeCmd<Nota[]>("list_notas"),
       invokeCmd<Aluno[]>("list_alunos"),
       invokeCmd<Prova[]>("list_provas"),
       invokeCmd<Materia[]>("list_materias"),
+      invokeCmd<CategoriaLancamento[]>("list_categoria_lancamentos"),
     ]);
     setNotas(n);
     setAlunos(a);
     setProvas(p);
     setMaterias(m);
+    setCategorias(cats);
   }, []);
 
   useEffect(() => { load(); }, [load]);
@@ -55,16 +65,28 @@ export default function NotasPage() {
 
   function openEdit(n: Nota) {
     setEditing(n.id);
-    setForm({ aluno_id: String(n.aluno_id), prova_id: n.prova_id ? String(n.prova_id) : "", descricao: n.descricao, valor: String(n.valor) });
+    setForm({ aluno_id: String(n.aluno_id), prova_id: n.prova_id ? String(n.prova_id) : "", descricao: n.descricao, valor: String(n.valor), categoria_id: n.categoria_id ? String(n.categoria_id) : "" });
     setModal(true);
   }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     const valor = parseFloat(form.valor);
+    if (!form.aluno_id) {
+      notify("Selecione um aluno.", "error");
+      return;
+    }
+    if (!form.valor || isNaN(valor)) {
+      notify("Preencha o valor da nota.", "error");
+      return;
+    }
+    if (valor < 0) {
+      notify("A nota não pode ser negativa.", "error");
+      return;
+    }
     const maxNota = form.prova_id ? (provas.find((p) => String(p.id) === form.prova_id)?.valor_total ?? null) : null;
-    if (valor < 0 || (maxNota !== null && valor > maxNota)) {
-      notify("Valor inválido", "error");
+    if (maxNota !== null && valor > maxNota) {
+      notify(`A nota não pode exceder o valor total da prova (${maxNota}).`, "error");
       return;
     }
     const payload = {
@@ -72,6 +94,7 @@ export default function NotasPage() {
       provaId: form.prova_id ? Number(form.prova_id) : null,
       descricao: form.descricao,
       valor,
+      categoriaId: form.categoria_id ? Number(form.categoria_id) : null,
     };
     try {
       if (editing !== null) {
@@ -83,8 +106,8 @@ export default function NotasPage() {
       }
       setModal(false);
       load();
-    } catch {
-      notify("Erro ao salvar.", "error");
+    } catch (err) {
+      notify(String(err) || "Erro ao salvar.", "error");
     }
   }
 
@@ -96,6 +119,35 @@ export default function NotasPage() {
     } catch {
       notify("Erro ao remover.", "error");
     }
+  }
+
+  // ── Categorias CRUD ─────────────────────────────────────────────
+  function openCreateCat() { setCatEditing(null); setCatForm(EMPTY_CAT); setCatModal(true); }
+  function openEditCat(c: CategoriaLancamento) { setCatEditing(c.id); setCatForm({ nome: c.nome, cor: c.cor }); }
+
+  async function handleSaveCat(e: React.FormEvent) {
+    e.preventDefault();
+    if (!catForm.nome.trim()) return;
+    try {
+      if (catEditing !== null) {
+        await invokeCmd("update_categoria_lancamento", { id: catEditing, nome: catForm.nome, cor: catForm.cor });
+        notify("Categoria atualizada.");
+      } else {
+        await invokeCmd("create_categoria_lancamento", { nome: catForm.nome, cor: catForm.cor });
+        notify("Categoria criada.");
+      }
+      setCatEditing(null);
+      setCatForm(EMPTY_CAT);
+      setCategorias(await invokeCmd<CategoriaLancamento[]>("list_categoria_lancamentos"));
+    } catch (err) { notify(String(err), "error"); }
+  }
+
+  async function handleDeleteCat(id: number) {
+    try {
+      await invokeCmd("delete_categoria_lancamento", { id });
+      notify("Categoria removida.");
+      setCategorias(await invokeCmd<CategoriaLancamento[]>("list_categoria_lancamentos"));
+    } catch (err) { notify(String(err), "error"); }
   }
 
   const boletim = (() => {
@@ -151,6 +203,7 @@ export default function NotasPage() {
           <thead>
             <tr>
               <th>Aluno</th>
+              <th>Categoria</th>
               <th>Prova / Atividade</th>
               <th>Descrição</th>
               <th>Valor</th>
@@ -162,6 +215,14 @@ export default function NotasPage() {
             {filtered.map((n) => (
               <tr key={n.id}>
                 <td>{alunos.find((a) => a.id === n.aluno_id)?.nome ?? "-"}</td>
+                <td>
+                  {n.categoria_id ? (
+                    <span className="flex items-center gap-1.5">
+                      <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: categorias.find(c => c.id === n.categoria_id)?.cor ?? "#6366f1" }} />
+                      {n.categoria_nome}
+                    </span>
+                  ) : <span className="text-base-content/40">–</span>}
+                </td>
                 <td>{provas.find((p) => p.id === n.prova_id)?.titulo ?? "-"}</td>
                 <td>{n.descricao}</td>
                 <td>{n.valor}</td>
@@ -213,6 +274,20 @@ export default function NotasPage() {
                 </select>
               </fieldset>
               <fieldset className="fieldset">
+                <legend className="fieldset-legend flex items-center justify-between">
+                  <span>Categoria</span>
+                  <button type="button" className="btn btn-xs btn-ghost gap-1" onClick={() => setCatModal(true)} title="Gerenciar categorias">
+                    <MdSettings size={14} /> Gerenciar
+                  </button>
+                </legend>
+                <select className="select w-full" value={form.categoria_id} onChange={(e) => setForm({ ...form, categoria_id: e.target.value })}>
+                  <option value="">Sem categoria</option>
+                  {categorias.map((c) => (
+                    <option key={c.id} value={c.id}>{c.nome}</option>
+                  ))}
+                </select>
+              </fieldset>
+              <fieldset className="fieldset">
                 <legend className="fieldset-legend">Prova (opcional)</legend>
                 <select className="select w-full" value={form.prova_id} onChange={(e) => setForm({ ...form, prova_id: e.target.value })}>
                   <option value="">Nenhuma</option>
@@ -225,13 +300,54 @@ export default function NotasPage() {
               </fieldset>
               <fieldset className="fieldset">
                 <legend className="fieldset-legend">Valor</legend>
-                <input type="number" step="0.1" min="0" max={form.prova_id ? (provas.find((p) => String(p.id) === form.prova_id)?.valor_total ?? undefined) : undefined} className="input w-full" value={form.valor} onChange={(e) => setForm({ ...form, valor: e.target.value })} required />
+                <input type="number" step="0.1" className="input w-full" value={form.valor} onChange={(e) => setForm({ ...form, valor: e.target.value })} placeholder="0.0" />
               </fieldset>
               <div className="modal-action">
                 <button type="button" className="btn" onClick={() => setModal(false)}>Cancelar</button>
                 <button type="submit" className="btn btn-primary">Salvar</button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {catModal && (
+        <div className="modal modal-open" style={{ zIndex: 1100 }}>
+          <div className="modal-box max-w-md">
+            <h3 className="font-bold text-lg mb-4">Categorias de Lançamento</h3>
+
+            {/* Form to create/edit */}
+            <form onSubmit={handleSaveCat} className="flex flex-col gap-3 mb-4 p-3 bg-base-200 rounded-lg">
+              <p className="text-sm font-medium">{catEditing !== null ? "Editando categoria" : "Nova categoria"}</p>
+              <fieldset className="fieldset">
+                <legend className="fieldset-legend">Nome</legend>
+                <input className="input w-full" value={catForm.nome} onChange={(e) => setCatForm({ ...catForm, nome: e.target.value })} required placeholder="Ex: Trabalho" />
+              </fieldset>
+              <ColorPicker label="Cor" value={catForm.cor} onChange={(c) => setCatForm({ ...catForm, cor: c })} />
+              <div className="flex gap-2">
+                {catEditing !== null && (
+                  <button type="button" className="btn btn-sm btn-ghost" onClick={() => { setCatEditing(null); setCatForm(EMPTY_CAT); }}>Cancelar</button>
+                )}
+                <button type="submit" className="btn btn-sm btn-primary ml-auto">{catEditing !== null ? "Atualizar" : "Adicionar"}</button>
+              </div>
+            </form>
+
+            {/* List */}
+            <ul className="space-y-2">
+              {categorias.map((c) => (
+                <li key={c.id} className="flex items-center gap-3 p-2 rounded-lg hover:bg-base-200">
+                  <span className="w-4 h-4 rounded-full shrink-0" style={{ backgroundColor: c.cor }} />
+                  <span className="flex-1 font-medium">{c.nome}</span>
+                  <button className="btn btn-xs btn-ghost" onClick={() => openEditCat(c)}><MdEdit size={14} /></button>
+                  <button className="btn btn-xs btn-ghost text-error" onClick={() => handleDeleteCat(c.id)}><MdDelete size={14} /></button>
+                </li>
+              ))}
+              {categorias.length === 0 && <li className="text-sm text-base-content/40 text-center py-4">Nenhuma categoria.</li>}
+            </ul>
+
+            <div className="modal-action">
+              <button className="btn" onClick={() => { setCatModal(false); setCatEditing(null); setCatForm(EMPTY_CAT); }}>Fechar</button>
+            </div>
           </div>
         </div>
       )}

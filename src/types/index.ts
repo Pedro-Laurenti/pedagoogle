@@ -28,12 +28,31 @@ export interface Configuracoes {
   ano_letivo: string;
   tamanho_fonte: number;
   tema: string;
+  usar_turmas: boolean;
+  usar_professores: boolean;
+  usar_frequencia: boolean;
+  usar_recuperacao: boolean;
 }
 
 export interface Professor {
   id: number;
   nome: string;
   email: string;
+  telefone: string;
+  especialidade: string;
+  aulas_por_semana: number;
+  observacoes: string;
+}
+
+export interface ProfessorCronograma {
+  id: number;
+  professor_id: number;
+  titulo: string;
+  dia_semana: number;
+  hora_inicio: string;
+  hora_fim: string;
+  cor: string;
+  recorrente: boolean;
 }
 
 export interface Materia {
@@ -46,6 +65,7 @@ export interface Materia {
   turma_nome?: string;
   carga_horaria_semanal: number;
   cor: string;
+  icone: string;
 }
 
 export interface Turma {
@@ -88,6 +108,7 @@ export interface Prova {
   duas_colunas: boolean;
   paisagem: boolean;
   updated_at: string;
+  questoes_count: number;
 }
 
 export interface Presenca {
@@ -141,6 +162,12 @@ export interface QuestaoInput {
   dificuldade: string;
 }
 
+export interface CategoriaLancamento {
+  id: number;
+  nome: string;
+  cor: string;
+}
+
 export interface Nota {
   id: number;
   aluno_id: number;
@@ -148,6 +175,8 @@ export interface Nota {
   descricao: string;
   valor: number;
   updated_at: string;
+  categoria_id: number | null;
+  categoria_nome: string | null;
 }
 
 export interface Aula {
@@ -157,6 +186,8 @@ export interface Aula {
   hora_inicio: string;
   hora_fim: string;
   semestre: string;
+  turma_id: number | null;
+  aluno_ids: string;
 }
 
 export interface ToastState {

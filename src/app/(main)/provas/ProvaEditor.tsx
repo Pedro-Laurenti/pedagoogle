@@ -406,14 +406,6 @@ export default function ProvaEditor({ provaId, materias, turmas, onClose, onNoti
               <input type="number" step="0.5" min="0" className="input w-full" value={form.valor_total} onChange={(e) => setForm({ ...form, valor_total: e.target.value })} />
             </fieldset>
             <fieldset className="fieldset">
-              <legend className="fieldset-legend">Margens</legend>
-              <select className="select w-full" value={form.margens} onChange={(e) => setForm({ ...form, margens: e.target.value })}>
-                <option value="estreito">Estreito</option>
-                <option value="normal">Normal</option>
-                <option value="largo">Largo</option>
-              </select>
-            </fieldset>
-            <fieldset className="fieldset">
               <legend className="fieldset-legend">Rodapé</legend>
               <input className="input w-full" value={form.rodape} onChange={(e) => setForm({ ...form, rodape: e.target.value })} placeholder="Ex: Boa sorte!" />
             </fieldset>
@@ -441,10 +433,6 @@ export default function ProvaEditor({ provaId, materias, turmas, onClose, onNoti
             <label className="flex items-center gap-2 cursor-pointer">
               <input type="checkbox" className="checkbox" checked={form.is_recuperacao} onChange={(e) => setForm({ ...form, is_recuperacao: e.target.checked })} />
               <span className="text-sm">É prova de recuperação / segunda chamada</span>
-            </label>
-            <label className="flex items-center gap-2 cursor-pointer">
-              <input type="checkbox" className="checkbox" checked={form.qr_gabarito} onChange={(e) => setForm({ ...form, qr_gabarito: e.target.checked })} />
-              <span className="text-sm">Incluir QR code do gabarito no rodapé</span>
             </label>
             <label className="flex items-center gap-2 cursor-pointer">
               <input type="checkbox" className="checkbox" checked={form.duas_colunas} onChange={(e) => setForm({ ...form, duas_colunas: e.target.checked })} />

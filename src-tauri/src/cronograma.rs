@@ -27,11 +27,12 @@ fn check_conflito(conn: &rusqlite::Connection, dia_semana: &str, hora_inicio: &s
 pub fn list_aulas(semestre: Option<String>) -> Result<Vec<Aula>, String> {
     let conn = get_conn().map_err(|e| e.to_string())?;
     let mut stmt = conn.prepare(
-        "SELECT id, materia_id, dia_semana, hora_inicio, hora_fim, semestre FROM aulas ORDER BY dia_semana, hora_inicio"
+        "SELECT id, materia_id, dia_semana, hora_inicio, hora_fim, semestre, turma_id, COALESCE(aluno_ids,'[]') FROM aulas ORDER BY dia_semana, hora_inicio"
     ).map_err(|e| e.to_string())?;
     let all: Vec<Aula> = stmt.query_map([], |r| Ok(Aula {
         id: r.get(0)?, materia_id: r.get(1)?, dia_semana: r.get(2)?,
         hora_inicio: r.get(3)?, hora_fim: r.get(4)?, semestre: r.get(5)?,
+        turma_id: r.get(6)?, aluno_ids: r.get(7)?,
     })).map_err(|e| e.to_string())?
        .collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())?;
     Ok(match semestre {
@@ -41,12 +42,13 @@ pub fn list_aulas(semestre: Option<String>) -> Result<Vec<Aula>, String> {
 }
 
 #[tauri::command]
-pub fn create_aula(materia_id: Option<i64>, dia_semana: String, hora_inicio: String, hora_fim: String, semestre: String) -> Result<i64, String> {
+pub fn create_aula(materia_id: Option<i64>, dia_semana: String, hora_inicio: String, hora_fim: String, semestre: String, turma_id: Option<i64>, aluno_ids: Option<String>) -> Result<i64, String> {
     let conn = get_conn().map_err(|e| e.to_string())?;
     check_conflito(&conn, &dia_semana, &hora_inicio, &hora_fim, &semestre, 0)?;
+    let aids = aluno_ids.unwrap_or_else(|| "[]".into());
     conn.execute(
-        "INSERT INTO aulas (materia_id, dia_semana, hora_inicio, hora_fim, semestre) VALUES (?1,?2,?3,?4,?5)",
-        params![materia_id, dia_semana, hora_inicio, hora_fim, semestre],
+        "INSERT INTO aulas (materia_id, dia_semana, hora_inicio, hora_fim, semestre, turma_id, aluno_ids) VALUES (?1,?2,?3,?4,?5,?6,?7)",
+        params![materia_id, dia_semana, hora_inicio, hora_fim, semestre, turma_id, aids],
     ).map_err(map_db_err)?;
     let id = conn.last_insert_rowid();
     log::info!("Criado: aula id={}", id);
@@ -54,12 +56,13 @@ pub fn create_aula(materia_id: Option<i64>, dia_semana: String, hora_inicio: Str
 }
 
 #[tauri::command]
-pub fn update_aula(id: i64, materia_id: Option<i64>, dia_semana: String, hora_inicio: String, hora_fim: String, semestre: String) -> Result<(), String> {
+pub fn update_aula(id: i64, materia_id: Option<i64>, dia_semana: String, hora_inicio: String, hora_fim: String, semestre: String, turma_id: Option<i64>, aluno_ids: Option<String>) -> Result<(), String> {
     let conn = get_conn().map_err(|e| e.to_string())?;
     check_conflito(&conn, &dia_semana, &hora_inicio, &hora_fim, &semestre, id)?;
+    let aids = aluno_ids.unwrap_or_else(|| "[]".into());
     conn.execute(
-        "UPDATE aulas SET materia_id=?1, dia_semana=?2, hora_inicio=?3, hora_fim=?4, semestre=?5 WHERE id=?6",
-        params![materia_id, dia_semana, hora_inicio, hora_fim, semestre, id],
+        "UPDATE aulas SET materia_id=?1, dia_semana=?2, hora_inicio=?3, hora_fim=?4, semestre=?5, turma_id=?6, aluno_ids=?7 WHERE id=?8",
+        params![materia_id, dia_semana, hora_inicio, hora_fim, semestre, turma_id, aids, id],
     ).map_err(map_db_err)?;
     Ok(())
 }

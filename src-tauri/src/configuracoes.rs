@@ -11,7 +11,9 @@ pub fn get_configuracoes() -> Result<Configuracoes, String> {
                 COALESCE(margem_moldura, 5.0), COALESCE(margem_conteudo, 5.0),
                 COALESCE(fonte, 'New Computer Modern'),
                 COALESCE(nota_minima, 5.0), COALESCE(ano_letivo, '2026'),
-                COALESCE(tamanho_fonte, 11), COALESCE(tema, 'light')
+                COALESCE(tamanho_fonte, 11), COALESCE(tema, 'light'),
+                COALESCE(usar_turmas, 1), COALESCE(usar_professores, 1),
+                COALESCE(usar_frequencia, 1), COALESCE(usar_recuperacao, 1)
          FROM configuracoes WHERE id=1",
         [],
         |r| Ok(Configuracoes {
@@ -22,6 +24,10 @@ pub fn get_configuracoes() -> Result<Configuracoes, String> {
             fonte: r.get(8)?,
             nota_minima: r.get(9)?, ano_letivo: r.get(10)?,
             tamanho_fonte: r.get(11)?, tema: r.get(12)?,
+            usar_turmas: r.get::<_, i64>(13)? != 0,
+            usar_professores: r.get::<_, i64>(14)? != 0,
+            usar_frequencia: r.get::<_, i64>(15)? != 0,
+            usar_recuperacao: r.get::<_, i64>(16)? != 0,
         }),
     ).map_err(|e| e.to_string())
 }
@@ -31,14 +37,17 @@ pub fn save_configuracoes(
     nome_escola: String, logo_path: String, cidade: String, diretor: String,
     moldura_estilo: String, margem_folha: f64, margem_moldura: f64, margem_conteudo: f64,
     fonte: String, nota_minima: f64, ano_letivo: String, tamanho_fonte: i64, tema: String,
+    usar_turmas: bool, usar_professores: bool, usar_frequencia: bool, usar_recuperacao: bool,
 ) -> Result<(), String> {
     let conn = get_conn().map_err(|e| e.to_string())?;
     conn.execute(
         "UPDATE configuracoes SET nome_escola=?1, logo_path=?2, cidade=?3, diretor=?4, 
          moldura_estilo=?5, margem_folha=?6, margem_moldura=?7, margem_conteudo=?8,
-         fonte=?9, nota_minima=?10, ano_letivo=?11, tamanho_fonte=?12, tema=?13 WHERE id=1",
+         fonte=?9, nota_minima=?10, ano_letivo=?11, tamanho_fonte=?12, tema=?13,
+         usar_turmas=?14, usar_professores=?15, usar_frequencia=?16, usar_recuperacao=?17 WHERE id=1",
         params![nome_escola, logo_path, cidade, diretor, moldura_estilo, margem_folha,
-                margem_moldura, margem_conteudo, fonte, nota_minima, ano_letivo, tamanho_fonte, tema],
+                margem_moldura, margem_conteudo, fonte, nota_minima, ano_letivo, tamanho_fonte, tema,
+                usar_turmas as i64, usar_professores as i64, usar_frequencia as i64, usar_recuperacao as i64],
     ).map_err(|e| e.to_string())?;
     Ok(())
 }

@@ -15,6 +15,10 @@ pub struct Configuracoes {
     pub ano_letivo: String,
     pub tamanho_fonte: i64,
     pub tema: String,
+    pub usar_turmas: bool,
+    pub usar_professores: bool,
+    pub usar_frequencia: bool,
+    pub usar_recuperacao: bool,
 }
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -22,6 +26,32 @@ pub struct Professor {
     pub id: i64,
     pub nome: String,
     pub email: String,
+    pub telefone: String,
+    pub especialidade: String,
+    pub aulas_por_semana: i64,
+    pub observacoes: String,
+}
+
+#[derive(Serialize, Deserialize, Clone)]
+pub struct ProfessorCronograma {
+    pub id: i64,
+    pub professor_id: i64,
+    pub titulo: String,
+    pub dia_semana: i64,
+    pub hora_inicio: String,
+    pub hora_fim: String,
+    pub cor: String,
+    pub recorrente: bool,
+}
+
+#[derive(Serialize, Deserialize, Clone)]
+pub struct ProfessorCronogramaInput {
+    pub titulo: String,
+    pub dia_semana: i64,
+    pub hora_inicio: String,
+    pub hora_fim: String,
+    pub cor: String,
+    pub recorrente: bool,
 }
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -35,6 +65,7 @@ pub struct Materia {
     pub turma_nome: Option<String>,
     pub carga_horaria_semanal: i64,
     pub cor: String,
+    pub icone: String,
 }
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -81,6 +112,7 @@ pub struct Prova {
     pub duas_colunas: bool,
     pub paisagem: bool,
     pub updated_at: String,
+    pub questoes_count: i64,
 }
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -142,6 +174,13 @@ pub struct QuestaoInput {
 }
 
 #[derive(Serialize, Deserialize, Clone)]
+pub struct CategoriaLancamento {
+    pub id: i64,
+    pub nome: String,
+    pub cor: String,
+}
+
+#[derive(Serialize, Deserialize, Clone)]
 pub struct Nota {
     pub id: i64,
     pub aluno_id: i64,
@@ -149,6 +188,8 @@ pub struct Nota {
     pub descricao: String,
     pub valor: f64,
     pub updated_at: String,
+    pub categoria_id: Option<i64>,
+    pub categoria_nome: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -159,5 +200,7 @@ pub struct Aula {
     pub hora_inicio: String,
     pub hora_fim: String,
     pub semestre: String,
+    pub turma_id: Option<i64>,
+    pub aluno_ids: String,
 }
 

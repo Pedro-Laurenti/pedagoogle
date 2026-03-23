@@ -3,9 +3,9 @@ import { useState, useEffect, useCallback } from "react";
 import { MdAdd, MdEdit, MdDelete, MdCopyAll, MdViewModule, MdViewList } from "react-icons/md";
 import { invokeCmd } from "@/utils/tauri";
 import Toast from "@/components/Toast";
-import type { Aula, Materia, ToastState } from "@/types";
+import type { Aula, Materia, Turma, Aluno, Configuracoes, ToastState } from "@/types";
 
-interface AulaForm { materia_id: string; dia_semana: string; hora_inicio: string; hora_fim: string; semestre: string; [k: string]: unknown; }
+interface AulaForm { materia_id: string; dia_semana: string; hora_inicio: string; hora_fim: string; semestre: string; turma_id: string; aluno_ids: string; [k: string]: unknown; }
 
 const DIAS = ["Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado"];
 const GRADE_DIAS = ["Seg", "Ter", "Qua", "Qui", "Sex"];
@@ -16,7 +16,7 @@ const TOTAL_MINS = MIN_END - MIN_START;
 const PX_MIN = 1.5;
 const SLOT = 50;
 const SEMESTRE_PADRAO = "2026-1";
-const EMPTY: AulaForm = { materia_id: "", dia_semana: "Segunda", hora_inicio: "08:00", hora_fim: "09:00", semestre: SEMESTRE_PADRAO };
+const EMPTY: AulaForm = { materia_id: "", dia_semana: "Segunda", hora_inicio: "08:00", hora_fim: "09:00", semestre: SEMESTRE_PADRAO, turma_id: "", aluno_ids: "[]" };
 
 function toMins(t: string) {
   const [h, m] = t.split(":").map(Number);
@@ -31,6 +31,9 @@ const SLOTS = Array.from({ length: Math.ceil(TOTAL_MINS / SLOT) }, (_, i) => {
 export default function CronogramaPage() {
   const [aulas, setAulas] = useState<Aula[]>([]);
   const [materias, setMaterias] = useState<Materia[]>([]);
+  const [turmas, setTurmas] = useState<Turma[]>([]);
+  const [alunos, setAlunos] = useState<Aluno[]>([]);
+  const [config, setConfig] = useState<Configuracoes | null>(null);
   const [form, setForm] = useState<AulaForm>(EMPTY);
   const [editing, setEditing] = useState<number | null>(null);
   const [modal, setModal] = useState(false);
@@ -44,12 +47,18 @@ export default function CronogramaPage() {
   const [copiando, setCopiando] = useState(false);
 
   const load = useCallback(async () => {
-    const [a, m] = await Promise.all([
+    const [a, m, t, al, cfg] = await Promise.all([
       invokeCmd<Aula[]>("list_aulas", { semestre: null }),
       invokeCmd<Materia[]>("list_materias"),
+      invokeCmd<Turma[]>("list_turmas"),
+      invokeCmd<Aluno[]>("list_alunos"),
+      invokeCmd<Configuracoes>("get_configuracoes"),
     ]);
     setAulas(a);
     setMaterias(m);
+    setTurmas(t);
+    setAlunos(al);
+    setConfig(cfg);
   }, []);
 
   useEffect(() => { load(); }, [load]);
@@ -64,7 +73,7 @@ export default function CronogramaPage() {
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    const payload = { materiaId: form.materia_id ? Number(form.materia_id) : null, diaSemana: form.dia_semana, horaInicio: form.hora_inicio, horaFim: form.hora_fim, semestre: form.semestre };
+    const payload = { materiaId: form.materia_id ? Number(form.materia_id) : null, diaSemana: form.dia_semana, horaInicio: form.hora_inicio, horaFim: form.hora_fim, semestre: form.semestre, turmaId: form.turma_id ? Number(form.turma_id) : null, alunoIds: form.aluno_ids || "[]" };
     try {
       if (editing !== null) {
         await invokeCmd("update_aula", { id: editing, ...payload });
@@ -92,7 +101,7 @@ export default function CronogramaPage() {
 
   function openEdit(a: Aula) {
     setEditing(a.id);
-    setForm({ materia_id: a.materia_id ? String(a.materia_id) : "", dia_semana: a.dia_semana, hora_inicio: a.hora_inicio, hora_fim: a.hora_fim, semestre: a.semestre });
+    setForm({ materia_id: a.materia_id ? String(a.materia_id) : "", dia_semana: a.dia_semana, hora_inicio: a.hora_inicio, hora_fim: a.hora_fim, semestre: a.semestre, turma_id: a.turma_id ? String(a.turma_id) : "", aluno_ids: a.aluno_ids ?? "[]" });
     setModal(true);
   }
 
@@ -178,6 +187,35 @@ export default function CronogramaPage() {
                 <legend className="fieldset-legend">Semestre</legend>
                 <input className="input w-full" value={form.semestre} onChange={e => setForm({ ...form, semestre: e.target.value })} required />
               </fieldset>
+              {config?.usar_turmas && (
+                <fieldset className="fieldset">
+                  <legend className="fieldset-legend">Turma (opcional)</legend>
+                  <select className="select w-full" value={form.turma_id} onChange={e => setForm({ ...form, turma_id: e.target.value })}>
+                    <option value="">Nenhuma</option>
+                    {turmas.map(t => <option key={t.id} value={t.id}>{t.nome}</option>)}
+                  </select>
+                </fieldset>
+              )}
+              {alunos.length > 0 && (
+                <fieldset className="fieldset">
+                  <legend className="fieldset-legend">Alunos presentes (opcional)</legend>
+                  <div className="max-h-40 overflow-y-auto border border-base-300 rounded p-2 flex flex-col gap-1">
+                    {alunos.map(al => {
+                      const ids: number[] = JSON.parse(form.aluno_ids || "[]");
+                      const checked = ids.includes(al.id);
+                      return (
+                        <label key={al.id} className="flex items-center gap-2 cursor-pointer">
+                          <input type="checkbox" className="checkbox checkbox-sm" checked={checked} onChange={() => {
+                            const newIds = checked ? ids.filter(i => i !== al.id) : [...ids, al.id];
+                            setForm({ ...form, aluno_ids: JSON.stringify(newIds) });
+                          }} />
+                          <span className="text-sm">{al.nome}</span>
+                        </label>
+                      );
+                    })}
+                  </div>
+                </fieldset>
+              )}
               <div className="modal-action">
                 <button type="button" className="btn" onClick={() => setModal(false)}>Cancelar</button>
                 <button type="submit" className="btn btn-primary">Salvar</button>
@@ -210,23 +248,41 @@ export default function CronogramaPage() {
 }
 
 function GradeView({ aulas, materias, onEdit }: { aulas: Aula[]; materias: Materia[]; onEdit: (a: Aula) => void }) {
+  const [nowMins, setNowMins] = useState<number | null>(null);
+
+  useEffect(() => {
+    const update = () => {
+      const now = new Date();
+      setNowMins(now.getHours() * 60 + now.getMinutes());
+    };
+    update();
+    const interval = setInterval(update, 60000);
+    return () => clearInterval(interval);
+  }, []);
+
+  // JS getDay(): 0=Sun,1=Mon,...,5=Fri,6=Sat. Map to GRADE_DIAS index.
+  const todayIndex = new Date().getDay() - 1; // 0=Mon..4=Fri, -1=Sun/Sat (no highlight)
+
   return (
     <div className="overflow-auto border border-base-300 rounded-lg" style={{ maxHeight: "70vh" }}>
       <div style={{ display: "grid", gridTemplateColumns: `55px repeat(${GRADE_DIAS.length}, 1fr)`, gridTemplateRows: `32px ${TOTAL_MINS * PX_MIN}px`, minWidth: 580 }}>
         <div className="sticky top-0 z-20 bg-base-100 border-b border-r border-base-300" />
-        {GRADE_DIAS.map(abbr => (
-          <div key={abbr} className="sticky top-0 z-20 bg-base-100 border-b border-l border-base-300 flex items-center justify-center text-xs font-bold">{abbr}</div>
+        {GRADE_DIAS.map((abbr, i) => (
+          <div key={abbr} className={`sticky top-0 z-20 border-b border-l border-base-300 flex items-center justify-center text-xs font-bold ${i === todayIndex ? "bg-primary/10 text-primary" : "bg-base-100"}`}>{abbr}</div>
         ))}
         <div className="border-r border-base-300 relative">
           {SLOTS.map(slot => (
             <div key={slot} style={{ position: "absolute", top: (toMins(slot) - MIN_START) * PX_MIN - 6, right: 4 }} className="text-xs text-base-content/50 leading-none select-none">{slot}</div>
           ))}
         </div>
-        {GRADE_DIAS.map(abbr => (
-          <div key={abbr} className="border-l border-base-300 relative">
+        {GRADE_DIAS.map((abbr, i) => (
+          <div key={abbr} className={`border-l border-base-300 relative ${i === todayIndex ? "bg-primary/5" : ""}`}>
             {SLOTS.map(slot => (
               <div key={slot} style={{ position: "absolute", top: (toMins(slot) - MIN_START) * PX_MIN, left: 0, right: 0 }} className="border-t border-base-200" />
             ))}
+            {i === todayIndex && nowMins !== null && nowMins >= MIN_START && nowMins <= MIN_END && (
+              <div style={{ position: "absolute", top: (nowMins - MIN_START) * PX_MIN, left: 0, right: 0, zIndex: 10 }} className="border-t-2 border-error" />
+            )}
             {aulas.filter(a => DIA_ABREV[a.dia_semana] === abbr).map(a => {
               const top = (toMins(a.hora_inicio) - MIN_START) * PX_MIN;
               const height = Math.max((toMins(a.hora_fim) - toMins(a.hora_inicio)) * PX_MIN, 20);

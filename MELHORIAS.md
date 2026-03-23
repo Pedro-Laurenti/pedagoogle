@@ -1,16 +1,63 @@
-Ordem recomendada considerando as dependências entre prompts:
 
-| # | Prompt | Motivo |
-|---|---|---|
-| 1 | **regras-negocio** | Só lógica/validações, sem esquema novo — menor risco |
-| 2 | **professores** | Cria tabela `professores`; `alunos-materias` depende disso para `professor_id` em matérias |
-| 3 | **alunos-materias** | Usa `professores` (item 2); adiciona `cor` nas matérias, que `cronograma-extra` vai consumir |
-| 4 | **configuracoes-extra** | Adiciona `nota_minima` nas configs — necessário antes do boletim PDF de `notas-extra` |
-| 5 | **feature-toggles** | Depende de `professores` (item 2) e `configuracoes` estabilizados; adiciona checkboxes para ativar/desativar módulos (turmas, professores, frequência, recuperação) — suporte a homeschooling e escolas simples |
-| 6 | **cronograma-extra** | Depende de `materia.cor` adicionado em `alunos-materias` |
-| 7 | **notas-extra** | Depende de `turma_id` nas provas e `nota_minima` das configs (item 4) |
-| 8 | **recuperacao-frequencia** | Depende da estrutura de notas e aulas estável; `nota_minima` já deve existir; as rotas criadas aqui já terão `feature` definido pelo item 5 |
-| 9 | **provas-banco** | Independente — nova tabela `banco_questoes`, sem dependências externas |
-| 10 | **pdf-extra** | Só adiciona campos nas provas, independente |
-| 11 | **dashboard** | Lê de todas as tabelas — melhor rodar quando a estrutura está completa |
-| 12 | **db-arquitetura** | Grande refactor (migrações numeradas + Mutex) — deixar por último quando tudo está funcionando |
+"professores" precisa de mais campos, mais relevantes, atualmente só tem o email, mas precisava de mais alguns, inclusive relacionando o professor às turmas (quando o usuário optar por mostra-las), relacionando a matérias (que o professor leciona - podendo ser uma ou VÁRIAS), aulas por semana, cronograma de aulas pessoal do professor (ao estilo da página de cronogramas)... seja criativo, atualmente está MUITO VAZIO.
+
+
+---
+
+Ainda está dando:
+
+"Erro ao salvar."
+
+em Turmas
+
+---
+
+Em PROVAS ainda está aparecendo o campo "Margens" que não serve pra absolutamente NADA!!!!!!!! aquilo só está ali para ocupar espaço desnecessário
+
+essa funcionalidade de QR Code é meio desnecessária (totalmente desnecessária), pode remover
+
+a página de provas precisava de uma UX-UI melhor, por exemplo pra filtrar provas por matéria, por semestre, por categoria (recuperação ou não)... seja criativo... não se limite a apenas melhorar os filtros, proponha uma UX muito melhor
+
+---
+
+em alunos está dando o mesmo erro, e precisa da seleção de arquivos para mandar uma foto do aluno, não é copiar o caminho!!!!!!!
+
+essas imagens devem ser todas salvas em um lugar seguro dentro dos arquivos do app final (quando der build e instalar em um computador de fato) - qualquer imagem salva pelo usuário deve ser salva assim
+
+
+---
+
+em matéria:
+
+1. toda vez que clico para salvar, dá esse erro:
+
+Erro ao salvar matéria:"invalid args `cargaHorariaSemanal` for command `create_materia`: command create_materia missing required key cargaHorariaSemanal"
+
+2. deve haver um seletor de cor e um seletor de icone (react-icons) seguindo os padrões dos dois componentes #file:ColorPicker.tsx  e #file:IconPicker.tsx  (pode copíar igualzinho, só mudar os icones mesmo para ser algo que tenha a ver com matérias escolares)
+
+---
+
+pensei que você iria adicionar na página de configurações as opcionalidades que combinamos, que são:
+
+usar_turmas
+usar_professores
+usar_frequencia
+usar_recuperacao
+
+está dentro de #file:feature-toggles.prompt.md 
+
+---
+
+em Notas, não estou conseguindo salvar uma nova nota, toda vez que clico em "salvar" aparece um tooltip vazio sobre o campo "valor" e nada acontece
+
+---
+
+Em "cronograma" precisa aparecer "turma", quando o usuário tiver optado por mostrar as funcionalidades, e quando não tiver, precisa aparecer "aluno" - podendo ser mais de um aluno (campo opcional)
+
+
+precisa aparecer um ponteiro mostrando o dia atual e a hora atual também na visualização de grade
+
+No dashboard deve aparecer uma área semelhante à grade do cronograma, só que mostrando as aulas do dia de hoje
+
+---
+

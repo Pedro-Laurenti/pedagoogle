@@ -129,6 +129,22 @@ const MIGRATIONS: &[(u32, &str)] = &[
     (28, "ALTER TABLE provas ADD COLUMN paisagem INTEGER NOT NULL DEFAULT 0"),
     (29, "ALTER TABLE provas ADD COLUMN updated_at TEXT NOT NULL DEFAULT ''"),
     (30, "ALTER TABLE alunos ADD COLUMN updated_at TEXT NOT NULL DEFAULT ''"),
+    (31, "ALTER TABLE professores ADD COLUMN telefone TEXT NOT NULL DEFAULT ''"),
+    (32, "ALTER TABLE professores ADD COLUMN especialidade TEXT NOT NULL DEFAULT ''"),
+    (33, "ALTER TABLE professores ADD COLUMN aulas_por_semana INTEGER NOT NULL DEFAULT 0"),
+    (34, "ALTER TABLE professores ADD COLUMN observacoes TEXT NOT NULL DEFAULT ''"),
+    (35, "CREATE TABLE IF NOT EXISTS professor_materias (professor_id INTEGER NOT NULL REFERENCES professores(id) ON DELETE CASCADE, materia_id INTEGER NOT NULL REFERENCES materias(id) ON DELETE CASCADE, PRIMARY KEY (professor_id, materia_id))"),
+    (36, "CREATE TABLE IF NOT EXISTS professor_turmas (professor_id INTEGER NOT NULL REFERENCES professores(id) ON DELETE CASCADE, turma_id INTEGER NOT NULL REFERENCES turmas(id) ON DELETE CASCADE, PRIMARY KEY (professor_id, turma_id))"),
+    (37, "CREATE TABLE IF NOT EXISTS professor_cronograma (id INTEGER PRIMARY KEY AUTOINCREMENT, professor_id INTEGER NOT NULL REFERENCES professores(id) ON DELETE CASCADE, titulo TEXT NOT NULL, dia_semana INTEGER NOT NULL, hora_inicio TEXT NOT NULL, hora_fim TEXT NOT NULL, cor TEXT NOT NULL DEFAULT '#3b82f6', recorrente INTEGER NOT NULL DEFAULT 1)"),
+    (38, "ALTER TABLE materias ADD COLUMN icone TEXT NOT NULL DEFAULT 'MdBook'"),
+    (39, "ALTER TABLE configuracoes ADD COLUMN usar_turmas INTEGER NOT NULL DEFAULT 1"),
+    (40, "ALTER TABLE configuracoes ADD COLUMN usar_professores INTEGER NOT NULL DEFAULT 1"),
+    (41, "ALTER TABLE configuracoes ADD COLUMN usar_frequencia INTEGER NOT NULL DEFAULT 1"),
+    (42, "ALTER TABLE configuracoes ADD COLUMN usar_recuperacao INTEGER NOT NULL DEFAULT 1"),
+    (43, "ALTER TABLE aulas ADD COLUMN turma_id INTEGER REFERENCES turmas(id) ON DELETE SET NULL"),
+    (44, "ALTER TABLE aulas ADD COLUMN aluno_ids TEXT NOT NULL DEFAULT '[]'"),
+    (45, "CREATE TABLE IF NOT EXISTS categoria_lancamentos (id INTEGER PRIMARY KEY AUTOINCREMENT, nome TEXT NOT NULL, cor TEXT NOT NULL DEFAULT '#6366f1'); INSERT OR IGNORE INTO categoria_lancamentos (id, nome, cor) VALUES (1, 'Prova', '#6366f1'), (2, 'Trabalho', '#10b981'), (3, 'Participação', '#f59e0b');"),
+    (46, "ALTER TABLE notas ADD COLUMN categoria_id INTEGER REFERENCES categoria_lancamentos(id) ON DELETE SET NULL"),
 ];
 
 fn run_migrations(conn: &Connection) -> Result<()> {
