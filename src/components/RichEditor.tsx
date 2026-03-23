@@ -170,9 +170,10 @@ interface Props {
   onChange: (html: string) => void;
   placeholder?: string;
   minHeight?: number;
+  label?: string;
 }
 
-export default function RichEditor({ value, onChange, placeholder, minHeight = 100 }: Props) {
+export default function RichEditor({ value, onChange, placeholder, minHeight = 100, label }: Props) {
   const [mathOpen, setMathOpen] = useState(false);
 
   const editor = useEditor({
@@ -238,7 +239,9 @@ export default function RichEditor({ value, onChange, placeholder, minHeight = 1
         />
       )}
 
-      <div className="border border-base-300 rounded-box overflow-hidden bg-base-100 focus-within:border-primary transition-colors">
+      <fieldset className="fieldset">
+        {label && <legend className="fieldset-legend">{label}</legend>}
+        <div className="border border-base-300 rounded-box overflow-hidden bg-base-100 focus-within:border-primary transition-colors">
         {/* Toolbar */}
         <div className="flex flex-wrap items-center gap-0.5 p-1.5 bg-base-200 border-b border-base-300">
           {/* Undo/Redo */}
@@ -346,7 +349,8 @@ export default function RichEditor({ value, onChange, placeholder, minHeight = 1
             <button type="button" className="btn btn-xs btn-ghost text-error" onMouseDown={(e) => { e.preventDefault(); editor.chain().focus().deleteTable().run(); }}>Excluir tabela</button>
           </div>
         )}
-      </div>
+        </div>
+      </fieldset>
     </>
   );
 }

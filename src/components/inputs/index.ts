@@ -1,0 +1,12 @@
+export { default as InputTexto } from "./InputTexto";
+export { default as InputTextArea } from "./InputTextArea";
+export { default as InputCheckbox } from "./InputCheckbox";
+export { default as InputRadio } from "./InputRadio";
+export { default as InputEmail } from "./InputEmail";
+export { default as InputTelefone } from "./InputTelefone";
+export { default as InputCPF } from "./InputCPF";
+export { default as InputMultiSelect } from "./InputMultiSelect";
+export { default as InputData } from "./InputData";
+export { default as InputHora } from "./InputHora";
+export { default as InputImagem } from "./InputImagem";
+export { default as RichEditor } from "../RichEditor";
