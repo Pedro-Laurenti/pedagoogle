@@ -67,6 +67,10 @@ pub fn migrate(conn: &Connection) -> Result<()> {
             hora_inicio TEXT NOT NULL,
             hora_fim TEXT NOT NULL
         );
+        CREATE INDEX IF NOT EXISTS idx_questoes_prova ON questoes(prova_id);
+        CREATE INDEX IF NOT EXISTS idx_notas_aluno ON notas(aluno_id);
+        CREATE INDEX IF NOT EXISTS idx_notas_prova ON notas(prova_id);
+        CREATE INDEX IF NOT EXISTS idx_aulas_dia ON aulas(dia_semana);
     ")?;
     let additions = [
         "ALTER TABLE materias ADD COLUMN professor TEXT NOT NULL DEFAULT ''",

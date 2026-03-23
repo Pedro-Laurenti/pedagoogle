@@ -78,6 +78,15 @@ pub fn list_questoes(prova_id: i64) -> Result<Vec<Questao>, String> {
 #[tauri::command]
 pub fn replace_questoes(prova_id: i64, questoes: Vec<QuestaoInput>) -> Result<(), String> {
     let conn = get_conn().map_err(|e| e.to_string())?;
+    let valor_total: f64 = conn.query_row(
+        "SELECT valor_total FROM provas WHERE id=?1",
+        params![prova_id],
+        |r| r.get(0),
+    ).map_err(|e| e.to_string())?;
+    let soma: f64 = questoes.iter().map(|q| q.valor).sum();
+    if (soma - valor_total).abs() > 0.01 {
+        return Err("Soma dos pontos não corresponde ao valor total da prova".into());
+    }
     conn.execute("DELETE FROM questoes WHERE prova_id=?1", params![prova_id]).map_err(|e| e.to_string())?;
     for (i, q) in questoes.iter().enumerate() {
         let opcoes = serde_json::to_string(&q.opcoes).unwrap_or_else(|_| "[]".into());
