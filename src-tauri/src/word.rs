@@ -167,21 +167,28 @@ pub fn export_prova_word(id: i64, path: String) -> Result<(), String> {
     let conn = get_conn().map_err(|e| e.to_string())?;
 
     let (titulo, descricao, rodape, nome_escola, cidade, diretor, professor, data, logo_path,
-         moldura_estilo, margem_folha, margem_moldura, margem_conteudo):
-        (String, String, String, String, String, String, String, String, String, String, f64, f64, f64) = conn.query_row(
+         moldura_estilo, margem_folha, margem_moldura, margem_conteudo, prova_margens):
+        (String, String, String, String, String, String, String, String, String, String, f64, f64, f64, String) = conn.query_row(
         "SELECT p.titulo, p.descricao, p.rodape,
                 COALESCE(c.nome_escola,''), COALESCE(c.cidade,''), COALESCE(c.diretor,''),
                 COALESCE(m.professor,''), p.data, COALESCE(c.logo_path,''),
                 COALESCE(c.moldura_estilo,'none'),
-                COALESCE(c.margem_folha, 10.0), COALESCE(c.margem_moldura, 5.0), COALESCE(c.margem_conteudo, 5.0)
+                COALESCE(c.margem_folha, 10.0), COALESCE(c.margem_moldura, 5.0), COALESCE(c.margem_conteudo, 5.0),
+                p.margens
          FROM provas p
          LEFT JOIN configuracoes c ON c.id=1
          LEFT JOIN materias m ON m.id=p.materia_id
          WHERE p.id=?1",
         params![id],
         |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?,
-                r.get(5)?, r.get(6)?, r.get(7)?, r.get(8)?, r.get(9)?, r.get(10)?, r.get(11)?, r.get(12)?)),
+                r.get(5)?, r.get(6)?, r.get(7)?, r.get(8)?, r.get(9)?, r.get(10)?, r.get(11)?, r.get(12)?, r.get(13)?)),
     ).map_err(|e| e.to_string())?;
+    let margem_folha = match prova_margens.as_str() {
+        "estreito" => 15.0,
+        "normal"   => 20.0,
+        "largo"    => 25.0,
+        _          => margem_folha,
+    };
 
     // Calculate total margin = paper margin + frame margin + content margin
     // Convert mm to twips: 1 mm ≈ 56.7 twips (1 inch = 1440 twips, 1 inch = 25.4 mm)
