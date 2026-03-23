@@ -15,7 +15,9 @@ use typst::{Library, World};
 use typst_pdf::PdfOptions;
 use crate::db::get_conn;
 use crate::models::Questao;
+use crate::notas::get_nota_efetiva;
 use rusqlite::params;
+use rand;
 
 // ── Typst World implementation ──────────────────────────────────────────────
 
@@ -361,10 +363,10 @@ fn enunciado_to_typst_with_images(html: &str, image_counter: &mut u32) -> (Strin
                                 let width_pt = wpx * 0.75; // px to pt (approx)
                                 out.push_str(&format!("#image(\"{}\", width: {}pt)\n\n", filename, width_pt));
                             } else {
-                                out.push_str(&format!("#image(\"{}\", width: 80%)\n\n", filename));
+                                out.push_str(&format!("#image(\"{}\", width: 60%)\n\n", filename));
                             }
                         } else {
-                            out.push_str(&format!("#image(\"{}\", width: 80%)\n\n", filename));
+                            out.push_str(&format!("#image(\"{}\", width: 60%)\n\n", filename));
                         }
                     }
                 }
@@ -721,6 +723,8 @@ fn build_typst_source(
     nome_escola: &str, cidade: &str, diretor: &str, professor: &str, data: &str,
     questoes: &[Questao],
     moldura_estilo: &str, margem_folha: f64, margem_moldura: f64, margem_conteudo: f64,
+    fonte: &str, tamanho_fonte: i64,
+    duas_colunas: bool, paisagem: bool,
 ) -> (String, HashMap<String, Bytes>) {
     let mut src = String::new();
     let mut all_images: HashMap<String, Bytes> = HashMap::new();
@@ -736,35 +740,46 @@ fn build_typst_source(
         String::new()
     };
 
-    // Page setup with configurable margins (one #set page call combining margin + background)
-    src.push_str(&format!(
-        "#set page(paper: \"a4\", margin: (left: {tm:.2}mm, right: {tm:.2}mm, top: {tm:.2}mm, bottom: {tm:.2}mm){bg})\n",
-        tm = total_margin, bg = bg_expr
-    ));
-    src.push_str("#set text(font: \"New Computer Modern\", size: 11pt)\n");
-    src.push_str("#set par(justify: false, leading: 0.65em)\n");
-    src.push_str("#set math.equation(numbering: none)\n\n");
-
-    // Header block
-    if !nome_escola.is_empty() {
-        src.push_str(&format!("#align(center)[#text(size: 14pt, weight: \"bold\")[{}]]\n", escape_typst(nome_escola)));
-    }
+    // Build header content (appears on every page)
     let data_cidade = match (!cidade.is_empty(), !data.is_empty()) {
         (true, true)   => format!("{}, {}", cidade, format_date_pt(data)),
         (true, false)  => cidade.to_string(),
         (false, true)  => format_date_pt(data),
         (false, false) => String::new(),
     };
+    let mut header_inner = String::new();
+    if !nome_escola.is_empty() {
+        header_inner.push_str(&format!("  #align(center)[#text(size: 14pt, weight: \"bold\")[{}]]\n", escape_typst(nome_escola)));
+    }
     if !data_cidade.is_empty() {
-        src.push_str(&format!("#align(center)[#text(size: 10pt)[{}]]\n", escape_typst(&data_cidade)));
+        header_inner.push_str(&format!("  #align(center)[#text(size: 10pt)[{}]]\n", escape_typst(&data_cidade)));
     }
     if !diretor.is_empty() {
-        src.push_str(&format!("#align(center)[#text(size: 10pt)[Diretor(a): {}]]\n", escape_typst(diretor)));
+        header_inner.push_str(&format!("  #align(center)[#text(size: 10pt)[Diretor(a): {}]]\n", escape_typst(diretor)));
     }
     if !professor.is_empty() {
-        src.push_str(&format!("#align(center)[#text(size: 10pt)[Professor(a): {}]]\n", escape_typst(professor)));
+        header_inner.push_str(&format!("  #align(center)[#text(size: 10pt)[Professor(a): {}]]\n", escape_typst(professor)));
     }
-    src.push_str("\n#line(length: 100%)\n\n");
+    if !header_inner.is_empty() {
+        header_inner.push_str("  #line(length: 100%)\n");
+    }
+    let header_param = if !header_inner.is_empty() {
+        format!(", header: [\n{}]", header_inner)
+    } else {
+        String::new()
+    };
+
+    // Page setup with configurable margins (one #set page call combining margin + background + header)
+    let flipped_param = if paisagem { ", flipped: true" } else { "" };
+    let columns_param = if duas_colunas { ", columns: 2" } else { "" };
+    src.push_str(&format!(
+        "#set page(paper: \"a4\"{flipped}{columns}, margin: (left: {tm:.2}mm, right: {tm:.2}mm, top: {tm:.2}mm, bottom: {tm:.2}mm), numbering: \"1\"{header}{bg})\n",
+        flipped = flipped_param, columns = columns_param,
+        tm = total_margin, header = header_param, bg = bg_expr
+    ));
+    src.push_str(&format!("#set text(font: \"{}\", size: {}pt)\n", fonte, tamanho_fonte));
+    src.push_str("#set par(justify: false, leading: 0.65em)\n");
+    src.push_str("#set math.equation(numbering: none)\n\n");
 
     // Student fields
     src.push_str("Aluno(a): #underline[#h(7cm)] Nota: #underline[#h(2cm)]\n\n");
@@ -872,6 +887,25 @@ fn build_typst_source(
     (src, all_images)
 }
 
+// ── QR Code generation ──────────────────────────────────────────────────────
+
+fn generate_qr_png(text: &str) -> Result<Vec<u8>, String> {
+    use qrcode::QrCode;
+    use image::ImageEncoder;
+
+    let code = QrCode::new(text.as_bytes()).map_err(|e| e.to_string())?;
+    let img = code.render::<image::Luma<u8>>()
+        .min_dimensions(200, 200)
+        .build();
+
+    let mut png_bytes: Vec<u8> = Vec::new();
+    let encoder = image::codecs::png::PngEncoder::new(&mut png_bytes);
+    encoder
+        .write_image(img.as_raw(), img.width(), img.height(), image::ColorType::L8.into())
+        .map_err(|e| e.to_string())?;
+    Ok(png_bytes)
+}
+
 // ── Tauri command ────────────────────────────────────────────────────────────
 
 #[tauri::command]
@@ -879,24 +913,32 @@ pub fn export_prova_pdf(id: i64, path: String) -> Result<(), String> {
     let conn = get_conn().map_err(|e| e.to_string())?;
 
     let (titulo, descricao, rodape, nome_escola, cidade, diretor, professor, data, _logo_path,
-         moldura_estilo, margem_folha, margem_moldura, margem_conteudo, prova_margens):
+         moldura_estilo, margem_folha, margem_moldura, margem_conteudo, prova_margens, fonte,
+         tamanho_fonte, escola_override, cidade_override, qr_gabarito, duas_colunas, paisagem):
         (String, String, String, String, String, String, String, String, String,
-         String, f64, f64, f64, String) = conn.query_row(
+         String, f64, f64, f64, String, String, i64, String, String, i64, i64, i64) = conn.query_row(
         "SELECT p.titulo, p.descricao, p.rodape,
                 COALESCE(c.nome_escola,''), COALESCE(c.cidade,''), COALESCE(c.diretor,''),
-                COALESCE(m.professor,''), p.data, COALESCE(c.logo_path,''),
+                COALESCE(prof.nome,''), p.data, COALESCE(c.logo_path,''),
                 COALESCE(c.moldura_estilo,'none'), COALESCE(c.margem_folha,15.0),
                 COALESCE(c.margem_moldura,5.0), COALESCE(c.margem_conteudo,5.0),
-                p.margens
+                p.margens, COALESCE(c.fonte,'New Computer Modern'),
+                COALESCE(c.tamanho_fonte,11),
+                COALESCE(p.escola_override,''), COALESCE(p.cidade_override,''),
+                COALESCE(p.qr_gabarito,0), COALESCE(p.duas_colunas,0), COALESCE(p.paisagem,0)
          FROM provas p
          LEFT JOIN configuracoes c ON c.id=1
          LEFT JOIN materias m ON m.id=p.materia_id
+         LEFT JOIN professores prof ON prof.id=m.professor_id
          WHERE p.id=?1",
         params![id],
         |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?,
                 r.get(5)?, r.get(6)?, r.get(7)?, r.get(8)?, r.get(9)?,
-                r.get(10)?, r.get(11)?, r.get(12)?, r.get(13)?)),
+                r.get(10)?, r.get(11)?, r.get(12)?, r.get(13)?, r.get(14)?,
+                r.get(15)?, r.get(16)?, r.get(17)?, r.get(18)?, r.get(19)?, r.get(20)?)),
     ).map_err(|e| e.to_string())?;
+    let nome_escola = if escola_override.is_empty() { nome_escola } else { escola_override };
+    let cidade = if cidade_override.is_empty() { cidade } else { cidade_override };
     let margem_folha = match prova_margens.as_str() {
         "estreito" => 15.0,
         "normal"   => 20.0,
@@ -905,7 +947,7 @@ pub fn export_prova_pdf(id: i64, path: String) -> Result<(), String> {
     };
 
     let mut stmt = conn.prepare(
-        "SELECT id, prova_id, enunciado, tipo, opcoes, ordem, valor, linhas_resposta \
+        "SELECT id, prova_id, enunciado, tipo, opcoes, ordem, valor, linhas_resposta, COALESCE(tags,''), COALESCE(dificuldade,'médio') \
          FROM questoes WHERE prova_id=?1 ORDER BY ordem"
     ).map_err(|e| e.to_string())?;
     let questoes: Vec<Questao> = stmt.query_map(params![id], |r| {
@@ -915,19 +957,29 @@ pub fn export_prova_pdf(id: i64, path: String) -> Result<(), String> {
             tipo: r.get(3)?,
             opcoes: serde_json::from_str(&opcoes_str).unwrap_or(serde_json::json!([])),
             ordem: r.get(5)?, valor: r.get(6)?, linhas_resposta: r.get(7)?,
+            tags: r.get(8)?, dificuldade: r.get(9)?,
         })
     }).map_err(|e| e.to_string())?
     .collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())?;
 
-    let (markup, images) = build_typst_source(
+    let (mut markup, mut images) = build_typst_source(
         &titulo, &descricao, &rodape,
         &nome_escola, &cidade, &diretor, &professor, &data,
         &questoes,
         &moldura_estilo, margem_folha, margem_moldura, margem_conteudo,
+        &fonte, tamanho_fonte,
+        duas_colunas != 0, paisagem != 0,
     );
 
+    if qr_gabarito != 0 {
+        let qr_text = format!("Gabarito: {}", titulo);
+        if let Ok(qr_bytes) = generate_qr_png(&qr_text) {
+            images.insert("qr_gabarito.png".to_string(), Bytes::new(qr_bytes));
+            markup.push_str("\n#align(right)[#image(\"qr_gabarito.png\", width: 2cm)]\n");
+        }
+    }
+
     let world = ExamWorld::new_with_files(markup.clone(), images);
-    // Write typst source to /tmp for debugging — remove after confirming PDF is correct
     let _ = fs::write("/tmp/pedagoogle_last_export.typ", &markup);
 
     let result = typst::compile::<PagedDocument>(&world);
@@ -941,6 +993,188 @@ pub fn export_prova_pdf(id: i64, path: String) -> Result<(), String> {
     let pdf_bytes = typst_pdf::pdf(&document, &PdfOptions::default())
         .map_err(|errs| errs.iter().map(|e| e.message.to_string()).collect::<Vec<_>>().join("; "))?;
 
+    fs::write(&path, pdf_bytes).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn export_prova_pdf_embaralhada(id: i64, path: String, versao: String) -> Result<(), String> {
+    let conn = get_conn().map_err(|e| e.to_string())?;
+
+    let (titulo, descricao, rodape, nome_escola, cidade, diretor, professor, data, _logo_path,
+         moldura_estilo, margem_folha, margem_moldura, margem_conteudo, prova_margens, fonte,
+         tamanho_fonte, escola_override, cidade_override, duas_colunas, paisagem):
+        (String, String, String, String, String, String, String, String, String,
+         String, f64, f64, f64, String, String, i64, String, String, i64, i64) = conn.query_row(
+        "SELECT p.titulo, p.descricao, p.rodape,
+                COALESCE(c.nome_escola,''), COALESCE(c.cidade,''), COALESCE(c.diretor,''),
+                COALESCE(prof.nome,''), p.data, COALESCE(c.logo_path,''),
+                COALESCE(c.moldura_estilo,'none'), COALESCE(c.margem_folha,15.0),
+                COALESCE(c.margem_moldura,5.0), COALESCE(c.margem_conteudo,5.0),
+                p.margens, COALESCE(c.fonte,'New Computer Modern'),
+                COALESCE(c.tamanho_fonte,11),
+                COALESCE(p.escola_override,''), COALESCE(p.cidade_override,''),
+                COALESCE(p.duas_colunas,0), COALESCE(p.paisagem,0)
+         FROM provas p
+         LEFT JOIN configuracoes c ON c.id=1
+         LEFT JOIN materias m ON m.id=p.materia_id
+         LEFT JOIN professores prof ON prof.id=m.professor_id
+         WHERE p.id=?1",
+        params![id],
+        |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?,
+                r.get(5)?, r.get(6)?, r.get(7)?, r.get(8)?, r.get(9)?,
+                r.get(10)?, r.get(11)?, r.get(12)?, r.get(13)?, r.get(14)?,
+                r.get(15)?, r.get(16)?, r.get(17)?, r.get(18)?, r.get(19)?)),
+    ).map_err(|e| e.to_string())?;
+    let nome_escola = if escola_override.is_empty() { nome_escola } else { escola_override };
+    let cidade = if cidade_override.is_empty() { cidade } else { cidade_override };
+    let margem_folha = match prova_margens.as_str() {
+        "estreito" => 15.0,
+        "normal"   => 20.0,
+        "largo"    => 25.0,
+        _          => margem_folha,
+    };
+    let titulo_versao = format!("Versão {} — {}", versao, titulo);
+
+    let mut stmt = conn.prepare(
+        "SELECT id, prova_id, enunciado, tipo, opcoes, ordem, valor, linhas_resposta, COALESCE(tags,''), COALESCE(dificuldade,'médio') \
+         FROM questoes WHERE prova_id=?1 ORDER BY ordem"
+    ).map_err(|e| e.to_string())?;
+    let mut questoes: Vec<Questao> = stmt.query_map(params![id], |r| {
+        let opcoes_str: String = r.get(4)?;
+        Ok(Questao {
+            id: r.get(0)?, prova_id: r.get(1)?, enunciado: r.get(2)?,
+            tipo: r.get(3)?,
+            opcoes: serde_json::from_str(&opcoes_str).unwrap_or(serde_json::json!([])),
+            ordem: r.get(5)?, valor: r.get(6)?, linhas_resposta: r.get(7)?,
+            tags: r.get(8)?, dificuldade: r.get(9)?,
+        })
+    }).map_err(|e| e.to_string())?
+    .collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())?;
+
+    questoes.sort_by_key(|_| rand::random::<u32>());
+    for q in questoes.iter_mut() {
+        if q.tipo == "multipla_escolha" {
+            if let serde_json::Value::Array(ref mut arr) = q.opcoes {
+                arr.sort_by_key(|_| rand::random::<u32>());
+            }
+        }
+    }
+
+    let (markup, images) = build_typst_source(
+        &titulo_versao, &descricao, &rodape,
+        &nome_escola, &cidade, &diretor, &professor, &data,
+        &questoes,
+        &moldura_estilo, margem_folha, margem_moldura, margem_conteudo,
+        &fonte, tamanho_fonte,
+        duas_colunas != 0, paisagem != 0,
+    );
+
+    let world = ExamWorld::new_with_files(markup, images);
+    let result = typst::compile::<PagedDocument>(&world);
+    let document = result.output.map_err(|errs| {
+        errs.iter().map(|e| e.message.to_string()).collect::<Vec<_>>().join("; ")
+    })?;
+    let pdf_bytes = typst_pdf::pdf(&document, &PdfOptions::default())
+        .map_err(|errs| errs.iter().map(|e| e.message.to_string()).collect::<Vec<_>>().join("; "))?;
+    fs::write(&path, pdf_bytes).map_err(|e| e.to_string())
+}
+
+fn build_gabarito_source(titulo: &str, nome_escola: &str, data: &str, questoes: &[Questao]) -> String {
+    let mut src = String::new();
+    src.push_str("#set page(paper: \"a4\", margin: 2cm, numbering: \"1\")\n");
+    src.push_str("#set text(font: \"New Computer Modern\", size: 11pt)\n");
+    src.push_str("#set par(leading: 0.65em)\n\n");
+    if !nome_escola.is_empty() {
+        src.push_str(&format!("#align(center)[#text(size: 12pt, weight: \"bold\")[{}]]\n", escape_typst(nome_escola)));
+    }
+    src.push_str("#align(center)[#text(size: 15pt, weight: \"bold\")[GABARITO]]\n");
+    src.push_str(&format!("#align(center)[#text(size: 13pt)[{}]]\n", escape_typst(titulo)));
+    if !data.is_empty() {
+        src.push_str(&format!("#align(center)[#text(size: 10pt)[{}]]\n", escape_typst(&format_date_pt(data))));
+    }
+    src.push_str("\n#line(length: 100%)\n\n");
+    for (i, q) in questoes.iter().enumerate() {
+        let valor_fmt = format!("{:.1}", q.valor);
+        src.push_str(&format!("#text(weight: \"bold\")[Questão {} ({} pt)]\n\n", i + 1, valor_fmt));
+        let opcoes_arr = q.opcoes.as_array().map(|v| v.as_slice()).unwrap_or(&[]);
+        match q.tipo.as_str() {
+            "multipla_escolha" => {
+                let idx = opcoes_arr.iter().position(|o| {
+                    o.get("correta").and_then(|v| v.as_bool()).unwrap_or(false)
+                });
+                if let Some(idx) = idx {
+                    let letra = (b'a' + idx as u8) as char;
+                    src.push_str(&format!("#pad(left: 8mm)[Resposta: #strong[{}]]\n\n", letra));
+                } else {
+                    src.push_str("#pad(left: 8mm)[Resposta: —]\n\n");
+                }
+            }
+            "verdadeiro_falso" => {
+                src.push_str("#pad(left: 8mm)[\n");
+                for (j, o) in opcoes_arr.iter().enumerate() {
+                    let letra = (b'a' + j as u8) as char;
+                    let vf = if o.get("correta").and_then(|v| v.as_bool()).unwrap_or(false) { "V" } else { "F" };
+                    src.push_str(&format!("{}) #strong[{}]\n\n", letra, vf));
+                }
+                src.push_str("]\n\n");
+            }
+            "associacao" => {
+                src.push_str("#pad(left: 8mm)[\n");
+                for j in 0..opcoes_arr.len() {
+                    let letra = (b'A' + j as u8) as char;
+                    src.push_str(&format!("{} #sym.arrow.r #strong[{}]\n\n", j + 1, letra));
+                }
+                src.push_str("]\n\n");
+            }
+            "ordenar" => {
+                src.push_str("#pad(left: 8mm)[\n");
+                for (j, o) in opcoes_arr.iter().enumerate() {
+                    if let Some(texto) = o.get("texto").and_then(|t| t.as_str()) {
+                        src.push_str(&format!("{}) {}\n\n", j + 1, escape_typst(texto)));
+                    }
+                }
+                src.push_str("]\n\n");
+            }
+            _ => {
+                src.push_str("#pad(left: 8mm)[Gabarito: #line(length: 80%)]\n\n");
+            }
+        }
+    }
+    src
+}
+
+#[tauri::command]
+pub fn export_gabarito_pdf(id: i64, path: String) -> Result<(), String> {
+    let conn = get_conn().map_err(|e| e.to_string())?;
+    let (titulo, data, nome_escola): (String, String, String) = conn.query_row(
+        "SELECT p.titulo, p.data, COALESCE(c.nome_escola,'') \
+         FROM provas p LEFT JOIN configuracoes c ON c.id=1 WHERE p.id=?1",
+        params![id],
+        |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+    ).map_err(|e| e.to_string())?;
+    let mut stmt = conn.prepare(
+        "SELECT id, prova_id, enunciado, tipo, opcoes, ordem, valor, linhas_resposta, COALESCE(tags,''), COALESCE(dificuldade,'médio') \
+         FROM questoes WHERE prova_id=?1 ORDER BY ordem"
+    ).map_err(|e| e.to_string())?;
+    let questoes: Vec<Questao> = stmt.query_map(params![id], |r| {
+        let opcoes_str: String = r.get(4)?;
+        Ok(Questao {
+            id: r.get(0)?, prova_id: r.get(1)?, enunciado: r.get(2)?,
+            tipo: r.get(3)?,
+            opcoes: serde_json::from_str(&opcoes_str).unwrap_or(serde_json::json!([])),
+            ordem: r.get(5)?, valor: r.get(6)?, linhas_resposta: r.get(7)?,
+            tags: r.get(8)?, dificuldade: r.get(9)?,
+        })
+    }).map_err(|e| e.to_string())?
+    .collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())?;
+    let markup = build_gabarito_source(&titulo, &nome_escola, &data, &questoes);
+    let world = ExamWorld::new(markup);
+    let result = typst::compile::<PagedDocument>(&world);
+    let document = result.output.map_err(|errs| {
+        errs.iter().map(|e| e.message.to_string()).collect::<Vec<_>>().join("; ")
+    })?;
+    let pdf_bytes = typst_pdf::pdf(&document, &PdfOptions::default())
+        .map_err(|errs| errs.iter().map(|e| e.message.to_string()).collect::<Vec<_>>().join("; "))?;
     fs::write(&path, pdf_bytes).map_err(|e| e.to_string())
 }
 
@@ -988,4 +1222,99 @@ ${}$"#,
     }
     
     Ok((png_data, width, height))
+}
+
+// ── Boletim PDF ──────────────────────────────────────────────────────────────
+
+#[tauri::command]
+pub fn export_boletim_pdf(aluno_id: i64, path: String) -> Result<(), String> {
+    let conn = get_conn().map_err(|e| e.to_string())?;
+
+    let aluno_nome: String = conn.query_row(
+        "SELECT nome FROM alunos WHERE id=?1",
+        params![aluno_id],
+        |r| r.get(0),
+    ).map_err(|e| e.to_string())?;
+
+    let (nome_escola, nota_minima, fonte, tamanho_fonte): (String, f64, String, i64) = conn.query_row(
+        "SELECT COALESCE(nome_escola,''), COALESCE(nota_minima,5.0), COALESCE(fonte,'New Computer Modern'), COALESCE(tamanho_fonte,11) FROM configuracoes WHERE id=1",
+        [],
+        |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
+    ).unwrap_or_else(|_| (String::new(), 5.0, "New Computer Modern".into(), 11));
+
+    let mut stmt = conn.prepare(
+        "SELECT n.valor, COALESCE(p.titulo, n.descricao), COALESCE(p.valor_total, 1.0),
+                COALESCE(m.id, -1), COALESCE(m.nome, 'Sem matéria')
+         FROM notas n
+         LEFT JOIN provas p ON p.id = n.prova_id
+         LEFT JOIN materias m ON m.id = p.materia_id
+         WHERE n.aluno_id = ?1
+         ORDER BY m.nome, n.id",
+    ).map_err(|e| e.to_string())?;
+
+    struct NotaRow { valor: f64, titulo: String, peso: f64, materia_id: i64, materia_nome: String }
+    let rows: Vec<NotaRow> = stmt.query_map(params![aluno_id], |r| {
+        Ok(NotaRow { valor: r.get(0)?, titulo: r.get(1)?, peso: r.get(2)?, materia_id: r.get(3)?, materia_nome: r.get(4)? })
+    }).map_err(|e| e.to_string())?
+    .collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())?;
+
+    struct GrupoMateria { nome: String, materia_id: i64, notas: Vec<(String, f64, f64)> }
+    let mut grupos: Vec<GrupoMateria> = Vec::new();
+    for row in &rows {
+        if let Some(g) = grupos.iter_mut().find(|g| g.nome == row.materia_nome) {
+            g.notas.push((row.titulo.clone(), row.valor, row.peso));
+        } else {
+            grupos.push(GrupoMateria { nome: row.materia_nome.clone(), materia_id: row.materia_id, notas: vec![(row.titulo.clone(), row.valor, row.peso)] });
+        }
+    }
+
+    let mut src = String::new();
+    src.push_str(&format!("#set page(paper: \"a4\", margin: 2cm, numbering: \"1\")\n"));
+    src.push_str(&format!("#set text(font: \"{}\", size: {}pt)\n", fonte, tamanho_fonte));
+    src.push_str("#set par(leading: 0.65em)\n\n");
+    if !nome_escola.is_empty() {
+        src.push_str(&format!("#align(center)[#text(size: 14pt, weight: \"bold\")[{}]]\n", escape_typst(&nome_escola)));
+    }
+    src.push_str("#align(center)[#text(size: 15pt, weight: \"bold\")[BOLETIM ESCOLAR]]\n");
+    src.push_str(&format!("#align(center)[#text(size: 12pt)[Aluno(a): #strong[{}]]]\n", escape_typst(&aluno_nome)));
+    src.push_str("\n#line(length: 100%)\n\n");
+
+    src.push_str("#table(\n  columns: (2fr, 3fr, 1.2fr, 1.5fr),\n");
+    src.push_str("  table.header()[#strong[Matéria]], table.header()[#strong[Provas e Notas]], table.header()[#strong[Média]], table.header()[#strong[Situação]],\n");
+
+    for g in &grupos {
+        let mut provas_str = String::new();
+        for (titulo, valor, _peso) in &g.notas {
+            if !provas_str.is_empty() { provas_str.push_str(" | "); }
+            provas_str.push_str(&format!("{}: {:.1}", escape_typst(titulo), valor));
+        }
+        let media = if g.materia_id > 0 {
+            get_nota_efetiva(&conn, aluno_id, g.materia_id)
+        } else {
+            let peso_total: f64 = g.notas.iter().map(|(_, _, p)| p).sum();
+            let pond_total: f64 = g.notas.iter().map(|(_, v, p)| v * p).sum();
+            if peso_total > 0.0 { pond_total / peso_total } else { 0.0 }
+        };
+        let situacao = if media >= nota_minima + 2.0 {
+            "Aprovado"
+        } else if media >= nota_minima {
+            "Em Recup."
+        } else {
+            "Reprovado"
+        };
+        src.push_str(&format!(
+            "  [{}], [{}], [#strong[{:.2}]], [{}],\n",
+            escape_typst(&g.nome), provas_str, media, situacao
+        ));
+    }
+    src.push_str(")\n");
+
+    let world = ExamWorld::new(src);
+    let result = typst::compile::<PagedDocument>(&world);
+    let document = result.output.map_err(|errs| {
+        errs.iter().map(|e| e.message.to_string()).collect::<Vec<_>>().join("; ")
+    })?;
+    let pdf_bytes = typst_pdf::pdf(&document, &PdfOptions::default())
+        .map_err(|errs| errs.iter().map(|e| e.message.to_string()).collect::<Vec<_>>().join("; "))?;
+    fs::write(&path, pdf_bytes).map_err(|e| e.to_string())
 }

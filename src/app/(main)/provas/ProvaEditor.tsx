@@ -1,11 +1,11 @@
 "use client";
 import { useState, useEffect, useCallback, useRef } from "react";
-import { MdArrowBack, MdAdd, MdDelete, MdPictureAsPdf, MdDescription, MdVisibility, MdEdit } from "react-icons/md";
+import { MdArrowBack, MdAdd, MdDelete, MdPictureAsPdf, MdDescription, MdVisibility, MdEdit, MdAssignmentTurnedIn, MdLibraryAdd, MdShuffle } from "react-icons/md";
 import { invokeCmd } from "@/utils/tauri";
 import { save } from "@tauri-apps/plugin-dialog";
 import RichEditor from "@/components/RichEditor";
 import "katex/dist/katex.min.css";
-import type { Materia, Prova, Questao, QuestaoInput, OpcaoQuestao, TipoQuestao, ToastState } from "@/types";
+import type { Materia, Prova, Questao, QuestaoInput, OpcaoQuestao, TipoQuestao, Turma, ToastState, BancoQuestao } from "@/types";
 
 const TIPOS: TipoQuestao[] = ["dissertativa", "multipla_escolha", "verdadeiro_falso", "completar_lacunas", "associacao", "ordenar"];
 const TIPO_LABELS: Record<TipoQuestao, string> = {
@@ -20,18 +20,22 @@ const TIPO_LABELS: Record<TipoQuestao, string> = {
 interface ProvaForm {
   titulo: string; descricao: string; materia_id: string;
   data: string; rodape: string; margens: string; valor_total: string;
+  escola_override: string; cidade_override: string; turma_id: string;
+  is_recuperacao: boolean; qr_gabarito: boolean;
+  duas_colunas: boolean; paisagem: boolean;
   [k: string]: unknown;
 }
 
 interface Props {
   provaId: number | null;
   materias: Materia[];
+  turmas: Turma[];
   onClose: () => void;
   onNotify: (message: string, type?: ToastState["type"]) => void;
 }
 
-const EMPTY_PROVA: ProvaForm = { titulo: "", descricao: "", materia_id: "", data: "", rodape: "", margens: "normal", valor_total: "10" };
-const newQuestao = (): QuestaoInput => ({ enunciado: "", tipo: "dissertativa", opcoes: [], valor: 0, linhas_resposta: 3, tempId: Date.now() + Math.random() });
+const EMPTY_PROVA: ProvaForm = { titulo: "", descricao: "", materia_id: "", data: "", rodape: "", margens: "normal", valor_total: "10", escola_override: "", cidade_override: "", turma_id: "", is_recuperacao: false, qr_gabarito: false, duas_colunas: false, paisagem: false };
+const newQuestao = (): QuestaoInput => ({ enunciado: "", tipo: "dissertativa", opcoes: [], valor: 0, linhas_resposta: 3, tags: "", dificuldade: "médio", tempId: Date.now() + Math.random() });
 
 function somaQuestoes(questoes: QuestaoInput[]) {
   return questoes.reduce((acc, q) => acc + (Number(q.valor) || 0), 0);
@@ -94,7 +98,7 @@ function PreviewProva({ form, questoes, materias }: { form: ProvaForm; questoes:
   return (
     <div className="bg-white text-black p-8 rounded shadow-lg font-serif text-sm leading-relaxed max-w-2xl mx-auto">
       <div className="text-center mb-4 border-b pb-3">
-        {materia && <p className="text-xs text-gray-500">{materia.nome}{materia.professor ? ` — Prof(a): ${materia.professor}` : ""}</p>}
+        {materia && <p className="text-xs text-gray-500">{materia.nome}{materia.professor_nome ? ` — Prof(a): ${materia.professor_nome}` : ""}</p>}
         {form.titulo && <h2 className="text-lg font-bold mt-1">{form.titulo}</h2>}
         {form.data && <p className="text-xs text-gray-500">{form.data}</p>}
         <div className="mt-2 text-xs text-left space-y-1">
@@ -168,11 +172,15 @@ function PreviewProva({ form, questoes, materias }: { form: ProvaForm; questoes:
   );
 }
 
-export default function ProvaEditor({ provaId, materias, onClose, onNotify }: Props) {
+export default function ProvaEditor({ provaId, materias, turmas, onClose, onNotify }: Props) {
   const [form, setForm] = useState<ProvaForm>(EMPTY_PROVA);
   const [questoes, setQuestoes] = useState<QuestaoInput[]>([]);
   const [saving, setSaving] = useState(false);
   const [preview, setPreview] = useState(false);
+  const [bancoModal, setBancoModal] = useState(false);
+  const [bancoQuestoes, setBancoQuestoes] = useState<BancoQuestao[]>([]);
+  const [versaoModal, setVersaoModal] = useState(false);
+  const [versao, setVersao] = useState("A");
 
   const load = useCallback(async () => {
     if (!provaId) return;
@@ -182,11 +190,19 @@ export default function ProvaEditor({ provaId, materias, onClose, onNotify }: Pr
       materia_id: prova.materia_id ? String(prova.materia_id) : "",
       data: prova.data, rodape: prova.rodape, margens: prova.margens,
       valor_total: String(prova.valor_total),
+      escola_override: prova.escola_override ?? "",
+      cidade_override: prova.cidade_override ?? "",
+      turma_id: prova.turma_id ? String(prova.turma_id) : "",
+      is_recuperacao: prova.is_recuperacao ?? false,
+      qr_gabarito: prova.qr_gabarito ?? false,
+      duas_colunas: prova.duas_colunas ?? false,
+      paisagem: prova.paisagem ?? false,
     });
     const qs = await invokeCmd<Questao[]>("list_questoes", { provaId });
     setQuestoes(qs.map((q) => ({
       id: q.id, enunciado: q.enunciado, tipo: q.tipo,
       opcoes: q.opcoes, valor: q.valor, linhas_resposta: q.linhas_resposta,
+      tags: q.tags ?? "", dificuldade: q.dificuldade ?? "médio",
     })));
   }, [provaId]);
 
@@ -226,9 +242,23 @@ export default function ProvaEditor({ provaId, materias, onClose, onNotify }: Pr
   }
 
   async function handleSave() {
+    for (let i = 0; i < questoes.length; i++) {
+      const q = questoes[i];
+      if (q.tipo === "multipla_escolha" && !q.opcoes.some((o) => o.correta)) {
+        onNotify(`Questão ${i + 1}: marque ao menos uma opção correta`, "error");
+        return;
+      }
+      if (q.tipo === "verdadeiro_falso" && q.opcoes.some((o) => !o.texto.trim())) {
+        onNotify(`Questão ${i + 1}: preencha o texto de todas as afirmações`, "error");
+        return;
+      }
+    }
+    if (form.data && form.data < new Date().toISOString().slice(0, 10)) {
+      if (!window.confirm("A data da prova está no passado. Deseja salvar assim?")) return;
+    }
     setSaving(true);
     try {
-      const payload = { titulo: form.titulo, descricao: form.descricao, materiaId: form.materia_id ? Number(form.materia_id) : null, data: form.data, rodape: form.rodape, margens: form.margens, valorTotal: parseFloat(form.valor_total) || 10 };
+      const payload = { titulo: form.titulo, descricao: form.descricao, materiaId: form.materia_id ? Number(form.materia_id) : null, data: form.data, rodape: form.rodape, margens: form.margens, valorTotal: parseFloat(form.valor_total) || 10, escolaOverride: form.escola_override, cidadeOverride: form.cidade_override, turmaId: form.turma_id ? Number(form.turma_id) : null, isRecuperacao: form.is_recuperacao, qrGabarito: form.qr_gabarito, duasColunas: form.duas_colunas, paisagem: form.paisagem };
       let id = provaId;
       if (!id) {
         id = await invokeCmd<number>("create_prova", payload);
@@ -263,6 +293,56 @@ export default function ProvaEditor({ provaId, materias, onClose, onNotify }: Pr
     }
   }
 
+  async function handleExportGabarito() {
+    if (!provaId) { onNotify("Salve a prova antes de exportar.", "warning"); return; }
+    const safeName = (form.titulo || "prova").replace(/[^a-zA-Z0-9\s]/g, "").trim().replace(/\s+/g, "_");
+    const filePath = await save({
+      defaultPath: `${safeName}_gabarito.pdf`,
+      filters: [{ name: "PDF", extensions: ["pdf"] }],
+    });
+    if (!filePath) return;
+    try {
+      await invokeCmd("export_gabarito_pdf", { id: provaId, path: filePath });
+      onNotify("Gabarito exportado com sucesso.");
+    } catch (e) {
+      onNotify(`Erro ao exportar gabarito: ${e}`, "error");
+    }
+  }
+
+  async function handleExportVersao() {
+    if (!provaId) { onNotify("Salve a prova antes de exportar.", "warning"); return; }
+    const safeName = (form.titulo || "prova").replace(/[^a-zA-Z0-9\s]/g, "").trim().replace(/\s+/g, "_");
+    const filePath = await save({
+      defaultPath: `${safeName}_versao_${versao}.pdf`,
+      filters: [{ name: "PDF", extensions: ["pdf"] }],
+    });
+    if (!filePath) return;
+    setVersaoModal(false);
+    try {
+      await invokeCmd("export_prova_pdf_embaralhada", { id: provaId, path: filePath, versao });
+      onNotify("Versão embaralhada exportada com sucesso.");
+    } catch (e) {
+      onNotify(`Erro ao exportar: ${e}`, "error");
+    }
+  }
+
+  async function abrirBanco() {
+    setBancoQuestoes(await invokeCmd<BancoQuestao[]>("list_banco_questoes"));
+    setBancoModal(true);
+  }
+
+  async function importarDoBanco(bancoId: number) {
+    if (!provaId) { onNotify("Salve a prova antes de importar.", "warning"); return; }
+    try {
+      await invokeCmd("import_from_banco", { bancoId, provaId });
+      onNotify("Questão importada.");
+      setBancoModal(false);
+      load();
+    } catch (e) {
+      onNotify(`Erro ao importar: ${e}`, "error");
+    }
+  }
+
   const soma = somaQuestoes(questoes);
   const valorTotal = parseFloat(form.valor_total) || 10;
   const somaOk = Math.abs(soma - valorTotal) < 0.01;
@@ -280,6 +360,12 @@ export default function ProvaEditor({ provaId, materias, onClose, onNotify }: Pr
           <>
             <button className="btn btn-sm btn-outline gap-1" onClick={() => handleExport("pdf")}>
               <MdPictureAsPdf size={18} /> Exportar PDF
+            </button>
+            <button className="btn btn-sm btn-outline gap-1" onClick={() => setVersaoModal(true)}>
+              <MdShuffle size={18} /> Exportar Versão
+            </button>
+            <button className="btn btn-sm btn-outline gap-1" onClick={handleExportGabarito}>
+              <MdAssignmentTurnedIn size={18} /> Gabarito PDF
             </button>
             <button className="btn btn-sm btn-outline gap-1" onClick={() => handleExport("word")}>
               <MdDescription size={18} /> Exportar Word
@@ -302,6 +388,13 @@ export default function ProvaEditor({ provaId, materias, onClose, onNotify }: Pr
               <select className="select w-full" value={form.materia_id} onChange={(e) => setForm({ ...form, materia_id: e.target.value })}>
                 <option value="">Selecione</option>
                 {materias.map((m) => <option key={m.id} value={m.id}>{m.nome}</option>)}
+              </select>
+            </fieldset>
+            <fieldset className="fieldset">
+              <legend className="fieldset-legend">Turma</legend>
+              <select className="select w-full" value={form.turma_id} onChange={(e) => setForm({ ...form, turma_id: e.target.value })}>
+                <option value="">Todas as turmas</option>
+                {turmas.map((t) => <option key={t.id} value={t.id}>{t.nome}</option>)}
               </select>
             </fieldset>
             <fieldset className="fieldset">
@@ -330,6 +423,39 @@ export default function ProvaEditor({ provaId, materias, onClose, onNotify }: Pr
             </fieldset>
           </div>
 
+          <details className="mb-4">
+            <summary className="cursor-pointer text-sm font-medium opacity-70 hover:opacity-100">Cabeçalho personalizado</summary>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-3">
+              <fieldset className="fieldset">
+                <legend className="fieldset-legend">Escola (sobrepõe configuração)</legend>
+                <input className="input w-full" value={form.escola_override} onChange={(e) => setForm({ ...form, escola_override: e.target.value })} placeholder="Deixe vazio para usar a configuração global" />
+              </fieldset>
+              <fieldset className="fieldset">
+                <legend className="fieldset-legend">Cidade (sobrepõe configuração)</legend>
+                <input className="input w-full" value={form.cidade_override} onChange={(e) => setForm({ ...form, cidade_override: e.target.value })} placeholder="Deixe vazio para usar a configuração global" />
+              </fieldset>
+            </div>
+          </details>
+
+          <div className="flex flex-wrap gap-6 mb-4">
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input type="checkbox" className="checkbox" checked={form.is_recuperacao} onChange={(e) => setForm({ ...form, is_recuperacao: e.target.checked })} />
+              <span className="text-sm">É prova de recuperação / segunda chamada</span>
+            </label>
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input type="checkbox" className="checkbox" checked={form.qr_gabarito} onChange={(e) => setForm({ ...form, qr_gabarito: e.target.checked })} />
+              <span className="text-sm">Incluir QR code do gabarito no rodapé</span>
+            </label>
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input type="checkbox" className="checkbox" checked={form.duas_colunas} onChange={(e) => setForm({ ...form, duas_colunas: e.target.checked })} />
+              <span className="text-sm">Layout duas colunas (questões objetivas)</span>
+            </label>
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input type="checkbox" className="checkbox" checked={form.paisagem} onChange={(e) => setForm({ ...form, paisagem: e.target.checked })} />
+              <span className="text-sm">Orientação paisagem</span>
+            </label>
+          </div>
+
           <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
             <div className="flex items-center gap-3">
               <h2 className="text-xl font-semibold">Questões</h2>
@@ -341,6 +467,7 @@ export default function ProvaEditor({ provaId, materias, onClose, onNotify }: Pr
               <button className="btn btn-sm btn-ghost" onClick={distribuirPontosIgual} disabled={questoes.length === 0}>
                 Distribuir pontos igualmente
               </button>
+              <button className="btn btn-sm btn-outline" onClick={abrirBanco}><MdLibraryAdd /> Importar do Banco</button>
               <button className="btn btn-sm btn-outline" onClick={addQuestao}><MdAdd /> Questão</button>
             </div>
           </div>
@@ -503,6 +630,24 @@ export default function ProvaEditor({ provaId, materias, onClose, onNotify }: Pr
                       ))}
                     </div>
                   )}
+
+                  <details>
+                    <summary className="cursor-pointer text-xs opacity-60 hover:opacity-100 mt-2">Tags e dificuldade</summary>
+                    <div className="grid grid-cols-2 gap-3 mt-2">
+                      <fieldset className="fieldset">
+                        <legend className="fieldset-legend">Tags</legend>
+                        <input className="input w-full input-sm" value={q.tags} onChange={(e) => updateQuestao(idx, "tags", e.target.value)} placeholder="Ex: frações, 6º ano" />
+                      </fieldset>
+                      <fieldset className="fieldset">
+                        <legend className="fieldset-legend">Dificuldade</legend>
+                        <select className="select w-full select-sm" value={q.dificuldade} onChange={(e) => updateQuestao(idx, "dificuldade", e.target.value)}>
+                          <option value="fácil">Fácil</option>
+                          <option value="médio">Médio</option>
+                          <option value="difícil">Difícil</option>
+                        </select>
+                      </fieldset>
+                    </div>
+                  </details>
                 </div>
               </div>
             ))}
@@ -516,6 +661,59 @@ export default function ProvaEditor({ provaId, materias, onClose, onNotify }: Pr
           {saving ? <span className="loading loading-spinner loading-sm" /> : "Salvar"}
         </button>
       </div>
+
+      {bancoModal && (
+        <div className="modal modal-open">
+          <div className="modal-box max-w-2xl">
+            <h3 className="font-bold text-lg mb-4">Importar do Banco de Questões</h3>
+            <div className="overflow-x-auto max-h-96">
+              <table className="table table-zebra w-full">
+                <thead>
+                  <tr>
+                    <th>Enunciado</th>
+                    <th>Tipo</th>
+                    <th>Dificuldade</th>
+                    <th>Tags</th>
+                    <th></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {bancoQuestoes.map((q) => (
+                    <tr key={q.id}>
+                      <td className="max-w-xs truncate">{q.enunciado.replace(/<[^>]*>/g, "")}</td>
+                      <td>{q.tipo}</td>
+                      <td>{q.dificuldade}</td>
+                      <td>{q.tags}</td>
+                      <td>
+                        <button className="btn btn-xs btn-primary" onClick={() => importarDoBanco(q.id)}>Importar</button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <div className="modal-action">
+              <button className="btn" onClick={() => setBancoModal(false)}>Fechar</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {versaoModal && (
+        <div className="modal modal-open">
+          <div className="modal-box max-w-sm">
+            <h3 className="font-bold text-lg mb-4">Exportar Versão Embaralhada</h3>
+            <fieldset className="fieldset">
+              <legend className="fieldset-legend">Versão (ex: A, B, C)</legend>
+              <input className="input w-full" value={versao} onChange={(e) => setVersao(e.target.value)} placeholder="A" />
+            </fieldset>
+            <div className="modal-action">
+              <button className="btn" onClick={() => setVersaoModal(false)}>Cancelar</button>
+              <button className="btn btn-primary" onClick={handleExportVersao}>Exportar PDF</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

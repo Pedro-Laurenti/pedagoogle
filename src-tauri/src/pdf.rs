@@ -61,10 +61,11 @@ pub fn export_prova_pdf(id: i64, path: String) -> Result<(), String> {
         (String, String, String, String, String, String, String, String, String) = conn.query_row(
         "SELECT p.titulo, p.descricao, p.rodape,
                 COALESCE(c.nome_escola,''), COALESCE(c.cidade,''), COALESCE(c.diretor,''),
-                COALESCE(m.professor,''), p.data, COALESCE(c.logo_path,'')
+                COALESCE(prof.nome,''), p.data, COALESCE(c.logo_path,'')
          FROM provas p
          LEFT JOIN configuracoes c ON c.id=1
          LEFT JOIN materias m ON m.id=p.materia_id
+         LEFT JOIN professores prof ON prof.id=m.professor_id
          WHERE p.id=?1",
         params![id],
         |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?,

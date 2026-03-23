@@ -25,6 +25,9 @@ typst-pdf = "0.14.2"
 typst-render = "0.14.2"
 typst-assets = { version = "0.14.2", features = ["fonts"] }
 png = "0.17"
+qrcode = "0.14"
+image = { version = "0.25", features = ["png"] }
+rand = "0.8"
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }

@@ -23,11 +23,22 @@ pub fn migrate(conn: &Connection) -> Result<()> {
             diretor TEXT NOT NULL DEFAULT ''
         );
         INSERT OR IGNORE INTO configuracoes (id) VALUES (1);
+        CREATE TABLE IF NOT EXISTS professores (
+            id    INTEGER PRIMARY KEY AUTOINCREMENT,
+            nome  TEXT NOT NULL,
+            email TEXT NOT NULL DEFAULT ''
+        );
         CREATE TABLE IF NOT EXISTS materias (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             nome TEXT NOT NULL,
             descricao TEXT NOT NULL DEFAULT '',
             professor TEXT NOT NULL DEFAULT ''
+        );
+        CREATE TABLE IF NOT EXISTS turmas (
+            id         INTEGER PRIMARY KEY AUTOINCREMENT,
+            nome       TEXT NOT NULL,
+            ano_letivo TEXT NOT NULL DEFAULT '2026',
+            turno      TEXT NOT NULL DEFAULT 'Manhã'
         );
         CREATE TABLE IF NOT EXISTS alunos (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -67,6 +78,15 @@ pub fn migrate(conn: &Connection) -> Result<()> {
             hora_inicio TEXT NOT NULL,
             hora_fim TEXT NOT NULL
         );
+        CREATE TABLE IF NOT EXISTS banco_questoes (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            tipo        TEXT NOT NULL DEFAULT 'dissertativa',
+            enunciado   TEXT NOT NULL DEFAULT '',
+            opcoes      TEXT NOT NULL DEFAULT '[]',
+            valor       REAL NOT NULL DEFAULT 1.0,
+            tags        TEXT NOT NULL DEFAULT '',
+            dificuldade TEXT NOT NULL DEFAULT 'médio'
+        );
         CREATE INDEX IF NOT EXISTS idx_questoes_prova ON questoes(prova_id);
         CREATE INDEX IF NOT EXISTS idx_notas_aluno ON notas(aluno_id);
         CREATE INDEX IF NOT EXISTS idx_notas_prova ON notas(prova_id);
@@ -83,6 +103,30 @@ pub fn migrate(conn: &Connection) -> Result<()> {
         "ALTER TABLE configuracoes ADD COLUMN margem_folha REAL NOT NULL DEFAULT 15.0",
         "ALTER TABLE configuracoes ADD COLUMN margem_moldura REAL NOT NULL DEFAULT 5.0",
         "ALTER TABLE configuracoes ADD COLUMN margem_conteudo REAL NOT NULL DEFAULT 5.0",
+        "ALTER TABLE alunos ADD COLUMN turma_id INTEGER REFERENCES turmas(id) ON DELETE SET NULL",
+        "ALTER TABLE alunos ADD COLUMN matricula TEXT NOT NULL DEFAULT ''",
+        "ALTER TABLE configuracoes ADD COLUMN fonte TEXT NOT NULL DEFAULT 'New Computer Modern'",
+        "ALTER TABLE materias ADD COLUMN professor_id INTEGER REFERENCES professores(id) ON DELETE SET NULL",
+        "ALTER TABLE alunos ADD COLUMN foto_path TEXT NOT NULL DEFAULT ''",
+        "ALTER TABLE materias ADD COLUMN turma_id INTEGER REFERENCES turmas(id) ON DELETE SET NULL",
+        "ALTER TABLE materias ADD COLUMN carga_horaria_semanal INTEGER NOT NULL DEFAULT 0",
+        "ALTER TABLE materias ADD COLUMN cor TEXT NOT NULL DEFAULT '#6366f1'",
+        "ALTER TABLE configuracoes ADD COLUMN nota_minima REAL NOT NULL DEFAULT 5.0",
+        "ALTER TABLE configuracoes ADD COLUMN ano_letivo TEXT NOT NULL DEFAULT '2026'",
+        "ALTER TABLE configuracoes ADD COLUMN tamanho_fonte INTEGER NOT NULL DEFAULT 11",
+        "ALTER TABLE configuracoes ADD COLUMN tema TEXT NOT NULL DEFAULT 'light'",
+        "ALTER TABLE provas ADD COLUMN escola_override TEXT NOT NULL DEFAULT ''",
+        "ALTER TABLE provas ADD COLUMN cidade_override TEXT NOT NULL DEFAULT ''",
+        "ALTER TABLE aulas ADD COLUMN semestre TEXT NOT NULL DEFAULT '2026-1'",
+        "ALTER TABLE provas ADD COLUMN turma_id INTEGER REFERENCES turmas(id) ON DELETE SET NULL",
+        "ALTER TABLE notas ADD COLUMN updated_at TEXT NOT NULL DEFAULT (datetime('now'))",
+        "ALTER TABLE provas ADD COLUMN is_recuperacao INTEGER NOT NULL DEFAULT 0",
+        "ALTER TABLE provas ADD COLUMN qr_gabarito INTEGER NOT NULL DEFAULT 0",
+        "CREATE TABLE IF NOT EXISTS presencas (id INTEGER PRIMARY KEY AUTOINCREMENT, aluno_id INTEGER NOT NULL REFERENCES alunos(id) ON DELETE CASCADE, aula_id INTEGER NOT NULL REFERENCES aulas(id) ON DELETE CASCADE, data TEXT NOT NULL, presente INTEGER NOT NULL DEFAULT 1, UNIQUE(aluno_id, aula_id))",
+        "ALTER TABLE questoes ADD COLUMN tags TEXT NOT NULL DEFAULT ''",
+        "ALTER TABLE questoes ADD COLUMN dificuldade TEXT NOT NULL DEFAULT 'médio'",
+        "ALTER TABLE provas ADD COLUMN duas_colunas INTEGER NOT NULL DEFAULT 0",
+        "ALTER TABLE provas ADD COLUMN paisagem INTEGER NOT NULL DEFAULT 0",
     ];
     for sql in &additions {
         let _ = conn.execute(sql, []);

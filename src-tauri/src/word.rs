@@ -171,13 +171,14 @@ pub fn export_prova_word(id: i64, path: String) -> Result<(), String> {
         (String, String, String, String, String, String, String, String, String, String, f64, f64, f64, String) = conn.query_row(
         "SELECT p.titulo, p.descricao, p.rodape,
                 COALESCE(c.nome_escola,''), COALESCE(c.cidade,''), COALESCE(c.diretor,''),
-                COALESCE(m.professor,''), p.data, COALESCE(c.logo_path,''),
+                COALESCE(prof.nome,''), p.data, COALESCE(c.logo_path,''),
                 COALESCE(c.moldura_estilo,'none'),
                 COALESCE(c.margem_folha, 10.0), COALESCE(c.margem_moldura, 5.0), COALESCE(c.margem_conteudo, 5.0),
                 p.margens
          FROM provas p
          LEFT JOIN configuracoes c ON c.id=1
          LEFT JOIN materias m ON m.id=p.materia_id
+         LEFT JOIN professores prof ON prof.id=m.professor_id
          WHERE p.id=?1",
         params![id],
         |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?,
@@ -194,9 +195,11 @@ pub fn export_prova_word(id: i64, path: String) -> Result<(), String> {
     // Convert mm to twips: 1 mm ≈ 56.7 twips (1 inch = 1440 twips, 1 inch = 25.4 mm)
     let total_margin_mm = margem_folha + margem_moldura + margem_conteudo;
     let margin_twips = (total_margin_mm * 56.7) as i32;
+    // 60% of text column width in EMU (A4 = 210mm, 1mm = 36000 EMU)
+    let col_60_emu = ((210.0 - 2.0 * total_margin_mm) * 36000.0 * 0.6) as u32;
 
     let mut stmt = conn.prepare(
-        "SELECT id, prova_id, enunciado, tipo, opcoes, ordem, valor, linhas_resposta \
+        "SELECT id, prova_id, enunciado, tipo, opcoes, ordem, valor, linhas_resposta, COALESCE(tags,''), COALESCE(dificuldade,'médio') \
          FROM questoes WHERE prova_id=?1 ORDER BY ordem"
     ).map_err(|e| e.to_string())?;
     let questoes: Vec<Questao> = stmt.query_map(params![id], |r| {
@@ -206,6 +209,7 @@ pub fn export_prova_word(id: i64, path: String) -> Result<(), String> {
             tipo: r.get(3)?,
             opcoes: serde_json::from_str(&opcoes_str).unwrap_or(serde_json::json!([])),
             ordem: r.get(5)?, valor: r.get(6)?, linhas_resposta: r.get(7)?,
+            tags: r.get(8)?, dificuldade: r.get(9)?,
         })
     }).map_err(|e| e.to_string())?
     .collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())?;
@@ -309,21 +313,15 @@ pub fn export_prova_word(id: i64, path: String) -> Result<(), String> {
                         if dyn_img.write_to(&mut png_buf, ic::ImageFormat::Png).is_ok() {
                             let png_bytes = png_buf.into_inner();
                             
-                            // Calculate EMUs: if width specified, use it; otherwise use image width at 96 DPI
-                            // 1 inch = 914400 EMUs, 1 inch = 96 pixels at 96 DPI
+                            // Calculate EMUs: cap at 60% of column width
                             let emu_per_px = 914400 / 96;
-                            let (target_w, target_h) = if let Some(w) = width {
-                                let tw = (*w as u32) * emu_per_px;
-                                let th = (tw as f64 * ih as f64 / iw as f64) as u32;
-                                (tw, th)
+                            let native_w = if let Some(w) = width {
+                                (*w as u32) * emu_per_px
                             } else {
-                                // Limit max width to ~15cm (about 567px at 96DPI)
-                                let max_width = 567u32;
-                                let actual_w = iw.min(max_width);
-                                let tw = actual_w * emu_per_px;
-                                let th = (tw as f64 * ih as f64 / iw as f64) as u32;
-                                (tw, th)
+                                iw * emu_per_px
                             };
+                            let target_w = native_w.min(col_60_emu);
+                            let target_h = (target_w as f64 * ih as f64 / iw as f64) as u32;
                             
                             let pic = Pic::new_with_dimensions(png_bytes, iw, ih)
                                 .size(target_w, target_h);

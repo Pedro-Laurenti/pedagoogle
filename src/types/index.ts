@@ -23,18 +23,51 @@ export interface Configuracoes {
   margem_folha: number;
   margem_moldura: number;
   margem_conteudo: number;
+  fonte: string;
+  nota_minima: number;
+  ano_letivo: string;
+  tamanho_fonte: number;
+  tema: string;
+}
+
+export interface Professor {
+  id: number;
+  nome: string;
+  email: string;
 }
 
 export interface Materia {
   id: number;
   nome: string;
   descricao: string;
-  professor: string;
+  professor_id: number | null;
+  professor_nome?: string;
+  turma_id: number | null;
+  turma_nome?: string;
+  carga_horaria_semanal: number;
+  cor: string;
+}
+
+export interface Turma {
+  id: number;
+  nome: string;
+  ano_letivo: string;
+  turno: string;
 }
 
 export interface Aluno {
   id: number;
   nome: string;
+  turma_id: number | null;
+  matricula: string;
+  turma_nome?: string;
+  foto_path: string;
+}
+
+export interface AlunoCsvRow {
+  nome: string;
+  matricula: string;
+  turma_id: number | null;
 }
 
 export interface Prova {
@@ -46,6 +79,39 @@ export interface Prova {
   rodape: string;
   margens: string;
   valor_total: number;
+  escola_override: string;
+  cidade_override: string;
+  turma_id: number | null;
+  is_recuperacao: boolean;
+  qr_gabarito: boolean;
+  duas_colunas: boolean;
+  paisagem: boolean;
+}
+
+export interface Presenca {
+  id: number;
+  aluno_id: number;
+  aula_id: number;
+  aluno_nome: string;
+  data: string;
+  presente: boolean;
+}
+
+export interface FrequenciaMateria {
+  materia_nome: string;
+  total_aulas: number;
+  presencas: number;
+  percentual: number;
+}
+
+export interface BancoQuestao {
+  id: number;
+  tipo: string;
+  enunciado: string;
+  opcoes: string;
+  valor: number;
+  tags: string;
+  dificuldade: string;
 }
 
 export interface Questao {
@@ -57,6 +123,8 @@ export interface Questao {
   ordem: number;
   valor: number;
   linhas_resposta: number;
+  tags: string;
+  dificuldade: string;
 }
 
 export interface QuestaoInput {
@@ -67,6 +135,8 @@ export interface QuestaoInput {
   opcoes: OpcaoQuestao[];
   valor: number;
   linhas_resposta: number;
+  tags: string;
+  dificuldade: string;
 }
 
 export interface Nota {
@@ -75,6 +145,7 @@ export interface Nota {
   prova_id: number | null;
   descricao: string;
   valor: number;
+  updated_at: string;
 }
 
 export interface Aula {
@@ -83,9 +154,28 @@ export interface Aula {
   dia_semana: string;
   hora_inicio: string;
   hora_fim: string;
+  semestre: string;
 }
 
 export interface ToastState {
   message: string;
   type: "success" | "error" | "warning" | "info";
+}
+
+export interface DashboardStats {
+  total_provas: number;
+  total_alunos: number;
+  total_materias: number;
+}
+
+export interface ProximaProva {
+  id: number;
+  titulo: string;
+  data: string;
+  materia_nome: string;
+}
+
+export interface MediaMateria {
+  materia_nome: string;
+  media: number;
 }

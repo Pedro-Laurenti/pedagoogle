@@ -1,9 +1,10 @@
 "use client";
 import { useState, useEffect, useCallback } from "react";
-import { MdAdd, MdEdit, MdDelete } from "react-icons/md";
+import { MdAdd, MdEdit, MdDelete, MdPictureAsPdf } from "react-icons/md";
 import { invokeCmd } from "@/utils/tauri";
+import { save } from "@tauri-apps/plugin-dialog";
 import Toast from "@/components/Toast";
-import type { Nota, Aluno, Prova, ToastState } from "@/types";
+import type { Nota, Aluno, Materia, Prova, ToastState } from "@/types";
 
 interface NotaForm { aluno_id: string; prova_id: string; descricao: string; valor: string; [k: string]: unknown; }
 
@@ -12,6 +13,7 @@ const EMPTY: NotaForm = { aluno_id: "", prova_id: "", descricao: "", valor: "" }
 export default function NotasPage() {
   const [notas, setNotas] = useState<Nota[]>([]);
   const [alunos, setAlunos] = useState<Aluno[]>([]);
+  const [materias, setMaterias] = useState<Materia[]>([]);
   const [provas, setProvas] = useState<Prova[]>([]);
   const [form, setForm] = useState<NotaForm>(EMPTY);
   const [editing, setEditing] = useState<number | null>(null);
@@ -20,14 +22,16 @@ export default function NotasPage() {
   const [toast, setToast] = useState<ToastState | null>(null);
 
   const load = useCallback(async () => {
-    const [n, a, p] = await Promise.all([
+    const [n, a, p, m] = await Promise.all([
       invokeCmd<Nota[]>("list_notas"),
       invokeCmd<Aluno[]>("list_alunos"),
       invokeCmd<Prova[]>("list_provas"),
+      invokeCmd<Materia[]>("list_materias"),
     ]);
     setNotas(n);
     setAlunos(a);
     setProvas(p);
+    setMaterias(m);
   }, []);
 
   useEffect(() => { load(); }, [load]);
@@ -36,6 +40,12 @@ export default function NotasPage() {
     setToast({ message, type });
     setTimeout(() => setToast(null), 3000);
   }
+
+  const provasDoAluno = (() => {
+    if (!form.aluno_id) return provas;
+    const aluno = alunos.find((a) => String(a.id) === form.aluno_id);
+    return provas.filter((p) => !aluno?.turma_id || !p.turma_id || p.turma_id === aluno.turma_id);
+  })();
 
   function openCreate() {
     setEditing(null);
@@ -51,11 +61,17 @@ export default function NotasPage() {
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
+    const valor = parseFloat(form.valor);
+    const maxNota = form.prova_id ? (provas.find((p) => String(p.id) === form.prova_id)?.valor_total ?? null) : null;
+    if (valor < 0 || (maxNota !== null && valor > maxNota)) {
+      notify("Valor inválido", "error");
+      return;
+    }
     const payload = {
       alunoId: Number(form.aluno_id),
       provaId: form.prova_id ? Number(form.prova_id) : null,
       descricao: form.descricao,
-      valor: parseFloat(form.valor),
+      valor,
     };
     try {
       if (editing !== null) {
@@ -82,12 +98,44 @@ export default function NotasPage() {
     }
   }
 
+  const boletim = (() => {
+    if (!filterAluno) return null;
+    const alunoNotas = notas.filter((n) => String(n.aluno_id) === filterAluno);
+    const groups = new Map<number | null, typeof alunoNotas>();
+    for (const n of alunoNotas) {
+      const mid = provas.find((p) => p.id === n.prova_id)?.materia_id ?? null;
+      if (!groups.has(mid)) groups.set(mid, []);
+      groups.get(mid)!.push(n);
+    }
+    let totalPeso = 0, totalPond = 0;
+    const grupos = [...groups.entries()].map(([mid, ns]) => {
+      let peso = 0, pond = 0;
+      for (const n of ns) { const w = provas.find((p) => p.id === n.prova_id)?.valor_total ?? 1; peso += w; pond += n.valor * w; }
+      totalPeso += peso; totalPond += pond;
+      return { nome: mid !== null ? (materias.find((m) => m.id === mid)?.nome ?? "?") : "Sem matéria", media: peso ? pond / peso : 0 };
+    });
+    return { grupos, mediaGeral: totalPeso ? totalPond / totalPeso : 0 };
+  })();
+
   const filtered = filterAluno ? notas.filter((n) => String(n.aluno_id) === filterAluno) : notas;
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex items-center gap-3 mb-6 flex-wrap">
         <h1 className="text-3xl font-bold">Notas</h1>
+        <div className="flex-1" />
+        {filterAluno && (
+          <button className="btn btn-outline gap-1" onClick={async () => {
+            const aluno = alunos.find((a) => String(a.id) === filterAluno);
+            const nome = (aluno?.nome ?? "aluno").replace(/[^\w\s]/g, "").trim().replace(/\s+/g, "_");
+            const filePath = await save({ defaultPath: `boletim_${nome}.pdf`, filters: [{ name: "PDF", extensions: ["pdf"] }] });
+            if (!filePath) return;
+            try {
+              await invokeCmd("export_boletim_pdf", { alunoId: Number(filterAluno), path: filePath });
+              notify("Boletim exportado com sucesso.");
+            } catch (e) { notify(`Erro ao exportar: ${e}`, "error"); }
+          }}><MdPictureAsPdf size={18} /> Exportar Boletim</button>
+        )}
         <button className="btn btn-primary" onClick={openCreate}><MdAdd size={20} /> Lançar Nota</button>
       </div>
 
@@ -106,6 +154,7 @@ export default function NotasPage() {
               <th>Prova / Atividade</th>
               <th>Descrição</th>
               <th>Valor</th>
+              <th>Atualizado</th>
               <th></th>
             </tr>
           </thead>
@@ -116,6 +165,7 @@ export default function NotasPage() {
                 <td>{provas.find((p) => p.id === n.prova_id)?.titulo ?? "-"}</td>
                 <td>{n.descricao}</td>
                 <td>{n.valor}</td>
+                <td>{n.updated_at ? new Date(n.updated_at).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" }) : "-"}</td>
                 <td className="flex gap-2">
                   <button className="btn btn-sm btn-ghost" onClick={() => openEdit(n)}><MdEdit /></button>
                   <button className="btn btn-sm btn-ghost text-error" onClick={() => handleDelete(n.id)}><MdDelete /></button>
@@ -125,6 +175,30 @@ export default function NotasPage() {
           </tbody>
         </table>
       </div>
+
+      {boletim && (
+        <div className="mt-8">
+          <h2 className="text-xl font-bold mb-4">Boletim</h2>
+          <div className="overflow-x-auto">
+            <table className="table table-zebra w-full">
+              <thead>
+                <tr><th>Matéria</th><th>Média Ponderada</th></tr>
+              </thead>
+              <tbody>
+                {boletim.grupos.map((g) => (
+                  <tr key={g.nome}>
+                    <td>{g.nome}</td>
+                    <td>{g.media.toFixed(2)}</td>
+                  </tr>
+                ))}
+              </tbody>
+              <tfoot>
+                <tr><td className="font-bold">Média Geral</td><td className="font-bold">{boletim.mediaGeral.toFixed(2)}</td></tr>
+              </tfoot>
+            </table>
+          </div>
+        </div>
+      )}
 
       {modal && (
         <div className="modal modal-open">
@@ -142,7 +216,7 @@ export default function NotasPage() {
                 <legend className="fieldset-legend">Prova (opcional)</legend>
                 <select className="select w-full" value={form.prova_id} onChange={(e) => setForm({ ...form, prova_id: e.target.value })}>
                   <option value="">Nenhuma</option>
-                  {provas.map((p) => <option key={p.id} value={p.id}>{p.titulo}</option>)}
+                  {provasDoAluno.map((p) => <option key={p.id} value={p.id}>{p.titulo}</option>)}
                 </select>
               </fieldset>
               <fieldset className="fieldset">
@@ -151,7 +225,7 @@ export default function NotasPage() {
               </fieldset>
               <fieldset className="fieldset">
                 <legend className="fieldset-legend">Valor</legend>
-                <input type="number" step="0.1" className="input w-full" value={form.valor} onChange={(e) => setForm({ ...form, valor: e.target.value })} required />
+                <input type="number" step="0.1" min="0" max={form.prova_id ? (provas.find((p) => String(p.id) === form.prova_id)?.valor_total ?? undefined) : undefined} className="input w-full" value={form.valor} onChange={(e) => setForm({ ...form, valor: e.target.value })} required />
               </fieldset>
               <div className="modal-action">
                 <button type="button" className="btn" onClick={() => setModal(false)}>Cancelar</button>

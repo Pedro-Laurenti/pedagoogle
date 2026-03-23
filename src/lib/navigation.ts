@@ -6,6 +6,9 @@ import {
   MdGrade,
   MdCalendarToday,
   MdSettings,
+  MdGroups,
+  MdPersonOutline,
+  MdFactCheck,
 } from "react-icons/md";
 import type { IconType } from "react-icons";
 
@@ -29,6 +32,13 @@ export const menuItems: MenuItem[] = [
     showInSidebar: true,
   },
   {
+    href: "/professores",
+    label: "Professores",
+    icon: MdPersonOutline,
+    description: "Cadastro de professores",
+    showInSidebar: true,
+  },
+  {
     href: "/materias",
     label: "Matérias",
     icon: MdSchool,
@@ -40,6 +50,13 @@ export const menuItems: MenuItem[] = [
     label: "Provas",
     icon: MdAssignment,
     description: "Criar e gerenciar provas",
+    showInSidebar: true,
+  },
+  {
+    href: "/turmas",
+    label: "Turmas",
+    icon: MdGroups,
+    description: "Gerenciar turmas",
     showInSidebar: true,
   },
   {
@@ -61,6 +78,13 @@ export const menuItems: MenuItem[] = [
     label: "Cronograma",
     icon: MdCalendarToday,
     description: "Grade semanal de aulas",
+    showInSidebar: true,
+  },
+  {
+    href: "/frequencia",
+    label: "Frequência",
+    icon: MdFactCheck,
+    description: "Controle de presença",
     showInSidebar: true,
   },
   {

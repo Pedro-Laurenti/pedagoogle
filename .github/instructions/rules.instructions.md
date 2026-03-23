@@ -20,11 +20,4 @@ applyTo: "**/*.py,**/.env*,**/config.py"
 * ALWAYS USE CLEANCODE
 * ALWAYS USE REACT-ICONS LIBRARY
 * USE DAISYUI AND TAILWIND-CSS
-* ALWAYS USE THIS PATTERN OF INPUT:
-```tsx
-<fieldset className="fieldset">
-  <legend className="fieldset-legend">What is your name?</legend>
-  <input type="text" className="input" placeholder="Type here" />
-  <p className="label">Optional</p>
-</fieldset>
-```
+* SEMPRE ESCREVA COM A GRAMÁTICA PORTUGUESA BRASILEIRA CORRETA, USANDO ACENTOS CORRETAMENTE, Ç, Ã

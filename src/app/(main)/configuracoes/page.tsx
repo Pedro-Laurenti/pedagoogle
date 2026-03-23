@@ -1,6 +1,6 @@
 "use client";
 import { useState, useEffect } from "react";
-import { open } from "@tauri-apps/plugin-dialog";
+import { open, save } from "@tauri-apps/plugin-dialog";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { invokeCmd } from "@/utils/tauri";
 import Toast from "@/components/Toast";
@@ -15,6 +15,11 @@ interface ConfigForm {
   margem_folha: number;
   margem_moldura: number;
   margem_conteudo: number;
+  fonte: string;
+  nota_minima: number;
+  ano_letivo: string;
+  tamanho_fonte: number;
+  tema: string;
   [k: string]: unknown;
 }
 
@@ -36,6 +41,11 @@ const EMPTY: ConfigForm = {
   margem_folha: 15,
   margem_moldura: 5,
   margem_conteudo: 5,
+  fonte: "New Computer Modern",
+  nota_minima: 5,
+  ano_letivo: "2026",
+  tamanho_fonte: 11,
+  tema: "light",
 };
 
 export default function ConfiguracoesPage() {
@@ -43,7 +53,10 @@ export default function ConfiguracoesPage() {
   const [toast, setToast] = useState<ToastState | null>(null);
 
   useEffect(() => {
-    invokeCmd<Configuracoes>("get_configuracoes").then((c) => setForm({ ...c })).catch(() => {});
+    invokeCmd<Configuracoes>("get_configuracoes").then((c) => {
+      setForm({ ...c });
+      document.documentElement.setAttribute("data-theme", c.tema || "light");
+    }).catch(() => {});
   }, []);
 
   function notify(message: string, type: ToastState["type"] = "success") {
@@ -73,10 +86,39 @@ export default function ConfiguracoesPage() {
         margemFolha: form.margem_folha,
         margemMoldura: form.margem_moldura,
         margemConteudo: form.margem_conteudo,
+        fonte: form.fonte,
+        notaMinima: form.nota_minima,
+        anoLetivo: form.ano_letivo,
+        tamanhoFonte: form.tamanho_fonte,
+        tema: form.tema,
       });
+      document.documentElement.setAttribute("data-theme", form.tema);
       notify("Configurações salvas.");
     } catch {
       notify("Erro ao salvar.", "error");
+    }
+  }
+
+  async function handleBackup() {
+    const filePath = await save({ defaultPath: "pedagoogle_backup.db", filters: [{ name: "SQLite", extensions: ["db"] }] });
+    if (!filePath) return;
+    try {
+      await invokeCmd("backup_database", { path: filePath });
+      notify("Backup exportado com sucesso.");
+    } catch {
+      notify("Erro ao exportar backup.", "error");
+    }
+  }
+
+  async function handleRestore() {
+    const filePath = await open({ filters: [{ name: "SQLite", extensions: ["db"] }], multiple: false });
+    if (!filePath || typeof filePath !== "string") return;
+    if (!window.confirm("Restaurar banco de dados? Os dados atuais serão substituídos.")) return;
+    try {
+      await invokeCmd("restore_database", { path: filePath });
+      notify("Banco restaurado. Reinicie o aplicativo para aplicar as alterações.");
+    } catch {
+      notify("Erro ao restaurar backup.", "error");
     }
   }
 
@@ -231,10 +273,82 @@ export default function ConfiguracoesPage() {
           </fieldset>
         )}
 
-        <div className="pt-2">
+        <fieldset className="fieldset">
+          <legend className="fieldset-legend">Fonte</legend>
+          <select
+            className="select w-full"
+            value={form.fonte}
+            onChange={(e) => setForm({ ...form, fonte: e.target.value })}
+          >
+            <option value="New Computer Modern">New Computer Modern</option>
+            <option value="DejaVu Sans">DejaVu Sans</option>
+            <option value="Libertinus Serif">Libertinus Serif</option>
+          </select>
+        </fieldset>
+
+        <fieldset className="fieldset">
+          <legend className="fieldset-legend">Tamanho da fonte PDF (pt)</legend>
+          <input
+            type="number"
+            className="input w-full"
+            value={form.tamanho_fonte}
+            onChange={(e) => setForm({ ...form, tamanho_fonte: parseInt(e.target.value) || 11 })}
+            min={8}
+            max={16}
+          />
+        </fieldset>
+
+        <div className="divider">Avaliação</div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <fieldset className="fieldset">
+            <legend className="fieldset-legend">Nota mínima de aprovação</legend>
+            <input
+              type="number"
+              className="input w-full"
+              value={form.nota_minima}
+              onChange={(e) => setForm({ ...form, nota_minima: parseFloat(e.target.value) || 0 })}
+              min={0}
+              max={10}
+              step={0.5}
+            />
+          </fieldset>
+          <fieldset className="fieldset">
+            <legend className="fieldset-legend">Ano letivo</legend>
+            <input
+              className="input w-full"
+              value={form.ano_letivo}
+              onChange={(e) => setForm({ ...form, ano_letivo: e.target.value })}
+              placeholder="Ex: 2026"
+            />
+          </fieldset>
+        </div>
+
+        <div className="divider">Aparência</div>
+
+        <fieldset className="fieldset">
+          <legend className="fieldset-legend">Tema</legend>
+          <select
+            className="select w-full"
+            value={form.tema}
+            onChange={(e) => setForm({ ...form, tema: e.target.value })}
+          >
+            <option value="light">Claro</option>
+            <option value="dark">Escuro</option>
+          </select>
+        </fieldset>
+
+        <div className="pt-2 flex gap-3 flex-wrap">
           <button type="submit" className="btn btn-primary">Salvar Configurações</button>
         </div>
       </form>
+
+      <div className="divider">Banco de Dados</div>
+      <div className="flex gap-3 flex-wrap">
+        <button type="button" className="btn btn-outline" onClick={handleBackup}>Exportar backup</button>
+        <button type="button" className="btn btn-outline btn-warning" onClick={handleRestore}>Restaurar backup</button>
+      </div>
+
       {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
     </div>
   );
