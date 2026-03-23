@@ -986,7 +986,7 @@ pub fn export_prova_pdf(id: i64, path: String) -> Result<(), String> {
 
     let document = result.output.map_err(|errs| {
         let msg = errs.iter().map(|e| e.message.to_string()).collect::<Vec<_>>().join("; ");
-        eprintln!("[typst error] {}", msg);
+        log::error!("[typst error] {}", msg);
         msg
     })?;
 
@@ -1199,7 +1199,7 @@ ${}$"#,
     
     let document = result.output.map_err(|errs| {
         let msg = errs.iter().map(|e| e.message.to_string()).collect::<Vec<_>>().join("; ");
-        eprintln!("[typst latex error] {} -> {}", latex, msg);
+        log::error!("[typst latex error] {} -> {}", latex, msg);
         msg
     })?;
     

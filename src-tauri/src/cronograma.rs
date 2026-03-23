@@ -48,7 +48,9 @@ pub fn create_aula(materia_id: Option<i64>, dia_semana: String, hora_inicio: Str
         "INSERT INTO aulas (materia_id, dia_semana, hora_inicio, hora_fim, semestre) VALUES (?1,?2,?3,?4,?5)",
         params![materia_id, dia_semana, hora_inicio, hora_fim, semestre],
     ).map_err(map_db_err)?;
-    Ok(conn.last_insert_rowid())
+    let id = conn.last_insert_rowid();
+    log::info!("Criado: aula id={}", id);
+    Ok(id)
 }
 
 #[tauri::command]
@@ -66,6 +68,7 @@ pub fn update_aula(id: i64, materia_id: Option<i64>, dia_semana: String, hora_in
 pub fn delete_aula(id: i64) -> Result<(), String> {
     let conn = get_conn().map_err(|e| e.to_string())?;
     conn.execute("DELETE FROM aulas WHERE id=?1", params![id]).map_err(map_db_err)?;
+    log::info!("Excluído id={} (aula)", id);
     Ok(())
 }
 

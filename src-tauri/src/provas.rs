@@ -1,5 +1,5 @@
 use rusqlite::params;
-use crate::db::get_conn;
+use crate::db::DbState;
 use crate::models::*;
 
 fn map_db_err(e: rusqlite::Error) -> String {
@@ -13,16 +13,13 @@ fn map_db_err(e: rusqlite::Error) -> String {
     s
 }
 
-#[tauri::command]
-pub fn list_provas() -> Result<Vec<Prova>, String> {
-    let conn = get_conn().map_err(|e| e.to_string())?;
-    let mut stmt = conn.prepare(
-        "SELECT id, titulo, descricao, materia_id, data, rodape, margens, valor_total,
-                COALESCE(escola_override,''), COALESCE(cidade_override,''), turma_id,
-                COALESCE(is_recuperacao,0), COALESCE(qr_gabarito,0),
-                COALESCE(duas_colunas,0), COALESCE(paisagem,0) FROM provas ORDER BY id DESC"
-    ).map_err(|e| e.to_string())?;
-    let rows = stmt.query_map([], |r| Ok(Prova {
+const PROVA_SELECT: &str = "SELECT id, titulo, descricao, materia_id, data, rodape, margens, valor_total,
+        COALESCE(escola_override,''), COALESCE(cidade_override,''), turma_id,
+        COALESCE(is_recuperacao,0), COALESCE(qr_gabarito,0),
+        COALESCE(duas_colunas,0), COALESCE(paisagem,0), COALESCE(updated_at,'') FROM provas";
+
+fn map_prova(r: &rusqlite::Row) -> rusqlite::Result<Prova> {
+    Ok(Prova {
         id: r.get(0)?, titulo: r.get(1)?, descricao: r.get(2)?,
         materia_id: r.get(3)?, data: r.get(4)?, rodape: r.get(5)?,
         margens: r.get(6)?, valor_total: r.get(7)?,
@@ -32,63 +29,69 @@ pub fn list_provas() -> Result<Vec<Prova>, String> {
         qr_gabarito: r.get::<_, i64>(12)? != 0,
         duas_colunas: r.get::<_, i64>(13)? != 0,
         paisagem: r.get::<_, i64>(14)? != 0,
-    })).map_err(|e| e.to_string())?;
+        updated_at: r.get(15)?,
+    })
+}
+
+#[tauri::command]
+pub fn list_provas(state: tauri::State<'_, DbState>) -> Result<Vec<Prova>, String> {
+    let conn = state.lock().map_err(|e| e.to_string())?;
+    let mut stmt = conn.prepare(&format!("{} ORDER BY id DESC", PROVA_SELECT)).map_err(|e| e.to_string())?;
+    let rows = stmt.query_map([], map_prova).map_err(|e| e.to_string())?;
     rows.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-pub fn get_prova(id: i64) -> Result<Prova, String> {
-    let conn = get_conn().map_err(|e| e.to_string())?;
+pub fn list_provas_page(state: tauri::State<'_, DbState>, page: i64, per_page: i64) -> Result<Vec<Prova>, String> {
+    let conn = state.lock().map_err(|e| e.to_string())?;
+    let mut stmt = conn.prepare(&format!("{} ORDER BY id DESC LIMIT ?1 OFFSET (?2-1)*?1", PROVA_SELECT)).map_err(|e| e.to_string())?;
+    let rows = stmt.query_map(params![per_page, page], map_prova).map_err(|e| e.to_string())?;
+    rows.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn get_prova(state: tauri::State<'_, DbState>, id: i64) -> Result<Prova, String> {
+    let conn = state.lock().map_err(|e| e.to_string())?;
     conn.query_row(
-        "SELECT id, titulo, descricao, materia_id, data, rodape, margens, valor_total,
-                COALESCE(escola_override,''), COALESCE(cidade_override,''), turma_id,
-                COALESCE(is_recuperacao,0), COALESCE(qr_gabarito,0),
-                COALESCE(duas_colunas,0), COALESCE(paisagem,0) FROM provas WHERE id=?1",
+        &format!("{} WHERE id=?1", PROVA_SELECT),
         params![id],
-        |r| Ok(Prova {
-            id: r.get(0)?, titulo: r.get(1)?, descricao: r.get(2)?,
-            materia_id: r.get(3)?, data: r.get(4)?, rodape: r.get(5)?,
-            margens: r.get(6)?, valor_total: r.get(7)?,
-            escola_override: r.get(8)?, cidade_override: r.get(9)?,
-            turma_id: r.get(10)?,
-            is_recuperacao: r.get::<_, i64>(11)? != 0,
-            qr_gabarito: r.get::<_, i64>(12)? != 0,
-            duas_colunas: r.get::<_, i64>(13)? != 0,
-            paisagem: r.get::<_, i64>(14)? != 0,
-        }),
+        map_prova,
     ).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-pub fn create_prova(titulo: String, descricao: String, materia_id: Option<i64>, data: String, rodape: String, margens: String, valor_total: f64, escola_override: String, cidade_override: String, turma_id: Option<i64>, is_recuperacao: bool, qr_gabarito: bool, duas_colunas: bool, paisagem: bool) -> Result<i64, String> {
-    let conn = get_conn().map_err(|e| e.to_string())?;
+pub fn create_prova(state: tauri::State<'_, DbState>, titulo: String, descricao: String, materia_id: Option<i64>, data: String, rodape: String, margens: String, valor_total: f64, escola_override: String, cidade_override: String, turma_id: Option<i64>, is_recuperacao: bool, qr_gabarito: bool, duas_colunas: bool, paisagem: bool) -> Result<i64, String> {
+    let conn = state.lock().map_err(|e| e.to_string())?;
     conn.execute(
         "INSERT INTO provas (titulo, descricao, materia_id, data, rodape, margens, valor_total, escola_override, cidade_override, turma_id, is_recuperacao, qr_gabarito, duas_colunas, paisagem) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14)",
         params![titulo, descricao, materia_id, data, rodape, margens, valor_total, escola_override, cidade_override, turma_id, is_recuperacao as i64, qr_gabarito as i64, duas_colunas as i64, paisagem as i64],
     ).map_err(map_db_err)?;
-    Ok(conn.last_insert_rowid())
+    let id = conn.last_insert_rowid();
+    log::info!("Criado: prova id={}", id);
+    Ok(id)
 }
 
 #[tauri::command]
-pub fn update_prova(id: i64, titulo: String, descricao: String, materia_id: Option<i64>, data: String, rodape: String, margens: String, valor_total: f64, escola_override: String, cidade_override: String, turma_id: Option<i64>, is_recuperacao: bool, qr_gabarito: bool, duas_colunas: bool, paisagem: bool) -> Result<(), String> {
-    let conn = get_conn().map_err(|e| e.to_string())?;
+pub fn update_prova(state: tauri::State<'_, DbState>, id: i64, titulo: String, descricao: String, materia_id: Option<i64>, data: String, rodape: String, margens: String, valor_total: f64, escola_override: String, cidade_override: String, turma_id: Option<i64>, is_recuperacao: bool, qr_gabarito: bool, duas_colunas: bool, paisagem: bool) -> Result<(), String> {
+    let conn = state.lock().map_err(|e| e.to_string())?;
     conn.execute(
-        "UPDATE provas SET titulo=?1, descricao=?2, materia_id=?3, data=?4, rodape=?5, margens=?6, valor_total=?7, escola_override=?8, cidade_override=?9, turma_id=?10, is_recuperacao=?11, qr_gabarito=?12, duas_colunas=?13, paisagem=?14 WHERE id=?15",
+        "UPDATE provas SET titulo=?1, descricao=?2, materia_id=?3, data=?4, rodape=?5, margens=?6, valor_total=?7, escola_override=?8, cidade_override=?9, turma_id=?10, is_recuperacao=?11, qr_gabarito=?12, duas_colunas=?13, paisagem=?14, updated_at=datetime('now') WHERE id=?15",
         params![titulo, descricao, materia_id, data, rodape, margens, valor_total, escola_override, cidade_override, turma_id, is_recuperacao as i64, qr_gabarito as i64, duas_colunas as i64, paisagem as i64, id],
     ).map_err(map_db_err)?;
     Ok(())
 }
 
 #[tauri::command]
-pub fn delete_prova(id: i64) -> Result<(), String> {
-    let conn = get_conn().map_err(|e| e.to_string())?;
+pub fn delete_prova(state: tauri::State<'_, DbState>, id: i64) -> Result<(), String> {
+    let conn = state.lock().map_err(|e| e.to_string())?;
     conn.execute("DELETE FROM provas WHERE id=?1", params![id]).map_err(map_db_err)?;
+    log::info!("Excluído id={} (prova)", id);
     Ok(())
 }
 
 #[tauri::command]
-pub fn list_questoes(prova_id: i64) -> Result<Vec<Questao>, String> {
-    let conn = get_conn().map_err(|e| e.to_string())?;
+pub fn list_questoes(state: tauri::State<'_, DbState>, prova_id: i64) -> Result<Vec<Questao>, String> {
+    let conn = state.lock().map_err(|e| e.to_string())?;
     let mut stmt = conn.prepare(
         "SELECT id, prova_id, enunciado, tipo, opcoes, ordem, valor, linhas_resposta, COALESCE(tags,''), COALESCE(dificuldade,'médio') FROM questoes WHERE prova_id=?1 ORDER BY ordem"
     ).map_err(|e| e.to_string())?;
@@ -106,8 +109,8 @@ pub fn list_questoes(prova_id: i64) -> Result<Vec<Questao>, String> {
 }
 
 #[tauri::command]
-pub fn duplicate_prova(id: i64) -> Result<i64, String> {
-    let conn = get_conn().map_err(|e| e.to_string())?;
+pub fn duplicate_prova(state: tauri::State<'_, DbState>, id: i64) -> Result<i64, String> {
+    let conn = state.lock().map_err(|e| e.to_string())?;
     let (titulo, descricao, materia_id, data, rodape, margens, valor_total, escola_override, cidade_override, turma_id, is_recuperacao, qr_gabarito, duas_colunas, paisagem):
         (String, String, Option<i64>, String, String, String, f64, String, String, Option<i64>, i64, i64, i64, i64) = conn.query_row(
         "SELECT titulo, descricao, materia_id, data, rodape, margens, valor_total, COALESCE(escola_override,''), COALESCE(cidade_override,''), turma_id, COALESCE(is_recuperacao,0), COALESCE(qr_gabarito,0), COALESCE(duas_colunas,0), COALESCE(paisagem,0) FROM provas WHERE id=?1",
@@ -137,8 +140,8 @@ pub fn duplicate_prova(id: i64) -> Result<i64, String> {
 }
 
 #[tauri::command]
-pub fn replace_questoes(prova_id: i64, questoes: Vec<QuestaoInput>) -> Result<(), String> {
-    let conn = get_conn().map_err(|e| e.to_string())?;
+pub fn replace_questoes(state: tauri::State<'_, DbState>, prova_id: i64, questoes: Vec<QuestaoInput>) -> Result<(), String> {
+    let conn = state.lock().map_err(|e| e.to_string())?;
     let valor_total: f64 = conn.query_row(
         "SELECT valor_total FROM provas WHERE id=?1",
         params![prova_id],
@@ -160,8 +163,8 @@ pub fn replace_questoes(prova_id: i64, questoes: Vec<QuestaoInput>) -> Result<()
 }
 
 #[tauri::command]
-pub fn list_banco_questoes() -> Result<Vec<crate::models::BancoQuestao>, String> {
-    let conn = get_conn().map_err(|e| e.to_string())?;
+pub fn list_banco_questoes(state: tauri::State<'_, DbState>) -> Result<Vec<crate::models::BancoQuestao>, String> {
+    let conn = state.lock().map_err(|e| e.to_string())?;
     let mut stmt = conn.prepare(
         "SELECT id, tipo, enunciado, opcoes, valor, tags, dificuldade FROM banco_questoes ORDER BY id DESC"
     ).map_err(|e| e.to_string())?;
@@ -173,18 +176,34 @@ pub fn list_banco_questoes() -> Result<Vec<crate::models::BancoQuestao>, String>
 }
 
 #[tauri::command]
-pub fn create_banco_questao(tipo: String, enunciado: String, opcoes: String, valor: f64, tags: String, dificuldade: String) -> Result<i64, String> {
-    let conn = get_conn().map_err(|e| e.to_string())?;
+pub fn list_banco_questoes_page(state: tauri::State<'_, DbState>, page: i64, per_page: i64, filtro: String) -> Result<Vec<crate::models::BancoQuestao>, String> {
+    let conn = state.lock().map_err(|e| e.to_string())?;
+    let pattern = format!("%{}%", filtro);
+    let mut stmt = conn.prepare(
+        "SELECT id, tipo, enunciado, opcoes, valor, tags, dificuldade FROM banco_questoes WHERE enunciado LIKE ?1 ORDER BY id DESC LIMIT ?2 OFFSET (?3-1)*?2"
+    ).map_err(|e| e.to_string())?;
+    let rows = stmt.query_map(params![pattern, per_page, page], |r| Ok(crate::models::BancoQuestao {
+        id: r.get(0)?, tipo: r.get(1)?, enunciado: r.get(2)?,
+        opcoes: r.get(3)?, valor: r.get(4)?, tags: r.get(5)?, dificuldade: r.get(6)?,
+    })).map_err(|e| e.to_string())?;
+    rows.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn create_banco_questao(state: tauri::State<'_, DbState>, tipo: String, enunciado: String, opcoes: String, valor: f64, tags: String, dificuldade: String) -> Result<i64, String> {
+    let conn = state.lock().map_err(|e| e.to_string())?;
     conn.execute(
         "INSERT INTO banco_questoes (tipo, enunciado, opcoes, valor, tags, dificuldade) VALUES (?1,?2,?3,?4,?5,?6)",
         params![tipo, enunciado, opcoes, valor, tags, dificuldade],
     ).map_err(map_db_err)?;
-    Ok(conn.last_insert_rowid())
+    let id = conn.last_insert_rowid();
+    log::info!("Criado: banco_questao id={}", id);
+    Ok(id)
 }
 
 #[tauri::command]
-pub fn update_banco_questao(id: i64, tipo: String, enunciado: String, opcoes: String, valor: f64, tags: String, dificuldade: String) -> Result<(), String> {
-    let conn = get_conn().map_err(|e| e.to_string())?;
+pub fn update_banco_questao(state: tauri::State<'_, DbState>, id: i64, tipo: String, enunciado: String, opcoes: String, valor: f64, tags: String, dificuldade: String) -> Result<(), String> {
+    let conn = state.lock().map_err(|e| e.to_string())?;
     conn.execute(
         "UPDATE banco_questoes SET tipo=?1, enunciado=?2, opcoes=?3, valor=?4, tags=?5, dificuldade=?6 WHERE id=?7",
         params![tipo, enunciado, opcoes, valor, tags, dificuldade, id],
@@ -193,15 +212,16 @@ pub fn update_banco_questao(id: i64, tipo: String, enunciado: String, opcoes: St
 }
 
 #[tauri::command]
-pub fn delete_banco_questao(id: i64) -> Result<(), String> {
-    let conn = get_conn().map_err(|e| e.to_string())?;
+pub fn delete_banco_questao(state: tauri::State<'_, DbState>, id: i64) -> Result<(), String> {
+    let conn = state.lock().map_err(|e| e.to_string())?;
     conn.execute("DELETE FROM banco_questoes WHERE id=?1", params![id]).map_err(map_db_err)?;
+    log::info!("Excluído id={} (banco_questao)", id);
     Ok(())
 }
 
 #[tauri::command]
-pub fn import_from_banco(banco_id: i64, prova_id: i64) -> Result<(), String> {
-    let conn = get_conn().map_err(|e| e.to_string())?;
+pub fn import_from_banco(state: tauri::State<'_, DbState>, banco_id: i64, prova_id: i64) -> Result<(), String> {
+    let conn = state.lock().map_err(|e| e.to_string())?;
     let (tipo, enunciado, opcoes, valor, tags, dificuldade): (String, String, String, f64, String, String) = conn.query_row(
         "SELECT tipo, enunciado, opcoes, valor, tags, dificuldade FROM banco_questoes WHERE id=?1",
         params![banco_id],

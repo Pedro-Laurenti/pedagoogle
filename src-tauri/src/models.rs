@@ -53,6 +53,7 @@ pub struct Aluno {
     pub matricula: String,
     pub turma_nome: Option<String>,
     pub foto_path: String,
+    pub updated_at: String,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -79,6 +80,7 @@ pub struct Prova {
     pub qr_gabarito: bool,
     pub duas_colunas: bool,
     pub paisagem: bool,
+    pub updated_at: String,
 }
 
 #[derive(Serialize, Deserialize, Clone)]

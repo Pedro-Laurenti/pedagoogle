@@ -14,7 +14,9 @@ pub fn list_professores() -> Result<Vec<Professor>, String> {
 pub fn create_professor(nome: String, email: String) -> Result<i64, String> {
     let conn = get_conn().map_err(|e| e.to_string())?;
     conn.execute("INSERT INTO professores (nome, email) VALUES (?1, ?2)", params![nome, email]).map_err(|e| e.to_string())?;
-    Ok(conn.last_insert_rowid())
+    let id = conn.last_insert_rowid();
+    log::info!("Criado: professor id={}", id);
+    Ok(id)
 }
 
 #[tauri::command]
@@ -36,5 +38,6 @@ pub fn delete_professor(id: i64) -> Result<(), String> {
         return Err("Existem matérias vinculadas a este professor. Remova o vínculo antes de excluir.".into());
     }
     conn.execute("DELETE FROM professores WHERE id=?1", params![id]).map_err(|e| e.to_string())?;
+    log::info!("Excluído id={} (professor)", id);
     Ok(())
 }

@@ -1,5 +1,5 @@
 use rusqlite::{params, Connection};
-use crate::db::get_conn;
+use crate::db::DbState;
 use crate::models::*;
 
 /// Returns the effective grade for an aluno in a given materia, taking recuperação into account.
@@ -57,8 +57,8 @@ fn map_db_err(e: rusqlite::Error) -> String {
 }
 
 #[tauri::command]
-pub fn list_notas() -> Result<Vec<Nota>, String> {
-    let conn = get_conn().map_err(|e| e.to_string())?;
+pub fn list_notas(state: tauri::State<'_, DbState>) -> Result<Vec<Nota>, String> {
+    let conn = state.lock().map_err(|e| e.to_string())?;
     let mut stmt = conn.prepare(
         "SELECT id, aluno_id, prova_id, descricao, valor, COALESCE(updated_at,'') FROM notas ORDER BY id DESC"
     ).map_err(|e| e.to_string())?;
@@ -70,11 +70,11 @@ pub fn list_notas() -> Result<Vec<Nota>, String> {
 }
 
 #[tauri::command]
-pub fn create_nota(aluno_id: i64, prova_id: Option<i64>, descricao: String, valor: f64) -> Result<i64, String> {
+pub fn create_nota(state: tauri::State<'_, DbState>, aluno_id: i64, prova_id: Option<i64>, descricao: String, valor: f64) -> Result<i64, String> {
     if valor < 0.0 {
         return Err("Nota não pode ser negativa".into());
     }
-    let conn = get_conn().map_err(|e| e.to_string())?;
+    let conn = state.lock().map_err(|e| e.to_string())?;
     if let Some(pid) = prova_id {
         let valor_total: f64 = conn.query_row(
             "SELECT valor_total FROM provas WHERE id=?1",
@@ -89,15 +89,17 @@ pub fn create_nota(aluno_id: i64, prova_id: Option<i64>, descricao: String, valo
         "INSERT INTO notas (aluno_id, prova_id, descricao, valor) VALUES (?1,?2,?3,?4)",
         params![aluno_id, prova_id, descricao, valor],
     ).map_err(map_db_err)?;
-    Ok(conn.last_insert_rowid())
+    let id = conn.last_insert_rowid();
+    log::info!("Criado: nota id={}", id);
+    Ok(id)
 }
 
 #[tauri::command]
-pub fn update_nota(id: i64, aluno_id: i64, prova_id: Option<i64>, descricao: String, valor: f64) -> Result<(), String> {
+pub fn update_nota(state: tauri::State<'_, DbState>, id: i64, aluno_id: i64, prova_id: Option<i64>, descricao: String, valor: f64) -> Result<(), String> {
     if valor < 0.0 {
         return Err("Nota não pode ser negativa".into());
     }
-    let conn = get_conn().map_err(|e| e.to_string())?;
+    let conn = state.lock().map_err(|e| e.to_string())?;
     if let Some(pid) = prova_id {
         let valor_total: f64 = conn.query_row(
             "SELECT valor_total FROM provas WHERE id=?1",
@@ -116,8 +118,9 @@ pub fn update_nota(id: i64, aluno_id: i64, prova_id: Option<i64>, descricao: Str
 }
 
 #[tauri::command]
-pub fn delete_nota(id: i64) -> Result<(), String> {
-    let conn = get_conn().map_err(|e| e.to_string())?;
+pub fn delete_nota(state: tauri::State<'_, DbState>, id: i64) -> Result<(), String> {
+    let conn = state.lock().map_err(|e| e.to_string())?;
     conn.execute("DELETE FROM notas WHERE id=?1", params![id]).map_err(map_db_err)?;
+    log::info!("Excluído id={} (nota)", id);
     Ok(())
 }

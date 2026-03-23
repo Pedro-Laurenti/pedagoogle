@@ -30,15 +30,19 @@ use tauri::Manager;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    env_logger::init();
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
         .setup(|app| {
             let data_dir = app.path().app_data_dir().expect("no app data dir");
             std::fs::create_dir_all(&data_dir)?;
-            db::init(data_dir.join("pedagoogle.db"));
+            let db_path = data_dir.join("pedagoogle.db");
+            db::backup_automatico(db_path.to_str().expect("path inválido"));
+            db::init(db_path);
             let conn = db::get_conn().expect("db connection failed");
             db::migrate(&conn).expect("migration failed");
+            app.manage(db::open_managed());
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -46,10 +50,13 @@ pub fn run() {
             list_materias, create_materia, update_materia, delete_materia,
             list_alunos, create_aluno, update_aluno, delete_aluno,
             preview_import_alunos_csv, confirm_import_alunos,
+            list_alunos_page,
             list_turmas, create_turma, update_turma, delete_turma,
             list_provas, get_prova, create_prova, update_prova, delete_prova, duplicate_prova,
+            list_provas_page,
             list_questoes, replace_questoes,
             list_banco_questoes, create_banco_questao, update_banco_questao, delete_banco_questao, import_from_banco,
+            list_banco_questoes_page,
             list_notas, create_nota, update_nota, delete_nota,
             list_aulas, create_aula, update_aula, delete_aula, copy_semestre,
             export_prova_pdf, export_prova_word, export_gabarito_pdf, export_boletim_pdf, export_prova_pdf_embaralhada,

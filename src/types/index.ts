@@ -62,6 +62,7 @@ export interface Aluno {
   matricula: string;
   turma_nome?: string;
   foto_path: string;
+  updated_at: string;
 }
 
 export interface AlunoCsvRow {
@@ -86,6 +87,7 @@ export interface Prova {
   qr_gabarito: boolean;
   duas_colunas: boolean;
   paisagem: boolean;
+  updated_at: string;
 }
 
 export interface Presenca {

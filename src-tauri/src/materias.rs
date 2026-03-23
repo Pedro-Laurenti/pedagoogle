@@ -44,7 +44,9 @@ pub fn create_materia(nome: String, descricao: String, professor_id: Option<i64>
         "INSERT INTO materias (nome, descricao, professor_id, turma_id, carga_horaria_semanal, cor) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
         params![nome, descricao, professor_id, turma_id, carga_horaria_semanal, cor],
     ).map_err(map_db_err)?;
-    Ok(conn.last_insert_rowid())
+    let id = conn.last_insert_rowid();
+    log::info!("Criado: materia id={}", id);
+    Ok(id)
 }
 
 #[tauri::command]
@@ -69,5 +71,6 @@ pub fn delete_materia(id: i64) -> Result<(), String> {
         return Err("Existem provas vinculadas a esta matéria. Remova-as antes de excluir.".into());
     }
     conn.execute("DELETE FROM materias WHERE id=?1", params![id]).map_err(map_db_err)?;
+    log::info!("Excluído id={} (materia)", id);
     Ok(())
 }

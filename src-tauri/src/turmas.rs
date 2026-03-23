@@ -40,7 +40,9 @@ pub fn create_turma(nome: String, ano_letivo: String, turno: String) -> Result<i
         params![nome, ano_letivo, turno],
     )
     .map_err(map_db_err)?;
-    Ok(conn.last_insert_rowid())
+    let id = conn.last_insert_rowid();
+    log::info!("Criado: turma id={}", id);
+    Ok(id)
 }
 
 #[tauri::command]
@@ -59,5 +61,6 @@ pub fn delete_turma(id: i64) -> Result<(), String> {
     let conn = get_conn().map_err(|e| e.to_string())?;
     conn.execute("DELETE FROM turmas WHERE id=?1", params![id])
         .map_err(map_db_err)?;
+    log::info!("Excluído id={} (turma)", id);
     Ok(())
 }
