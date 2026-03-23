@@ -6,7 +6,7 @@
   "build": {
     "beforeDevCommand": "cd src && npm run dev",
     "devUrl": "http://localhost:1420",
-    "beforeBuildCommand": "npm run build --prefix src",
+    "beforeBuildCommand": "",
     "frontendDist": "../src/out"
   },
   "app": {
