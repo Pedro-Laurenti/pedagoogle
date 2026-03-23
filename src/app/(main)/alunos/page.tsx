@@ -66,7 +66,7 @@ export default function AlunosPage() {
         await invokeCmd("update_aluno", { id: editing, ...form });
         notify("Aluno atualizado.");
       } else {
-        await invokeCmd("create_aluno", form);
+        await invokeCmd("create_aluno", form as unknown as Record<string, unknown>);
         notify("Aluno criado.");
       }
       setModal(false);
@@ -172,6 +172,9 @@ export default function AlunosPage() {
           </thead>
           <tbody>
             {alunosPagina.map((a) => (
+              <tr key={a.id}>
+                <td>
+                  {a.foto_path ? (
                     <img src={a.foto_path} className="w-8 h-8 rounded-full object-cover" alt={a.nome} />
                   ) : (
                     <MdPerson size={32} className="text-base-content/40" />

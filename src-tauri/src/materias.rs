@@ -1,5 +1,5 @@
 use rusqlite::params;
-use crate::db::get_conn;
+use crate::db::DbState;
 use crate::models::*;
 
 fn map_db_err(e: rusqlite::Error) -> String {
@@ -14,8 +14,8 @@ fn map_db_err(e: rusqlite::Error) -> String {
 }
 
 #[tauri::command]
-pub fn list_materias() -> Result<Vec<Materia>, String> {
-    let conn = get_conn().map_err(|e| e.to_string())?;
+pub fn list_materias(state: tauri::State<'_, DbState>) -> Result<Vec<Materia>, String> {
+    let conn = state.lock().map_err(|e| e.to_string())?;
     let mut stmt = conn.prepare(
         "SELECT m.id, m.nome, m.descricao, m.professor_id, p.nome, m.turma_id, t.nome, m.carga_horaria_semanal, m.cor \
          FROM materias m \
@@ -38,8 +38,8 @@ pub fn list_materias() -> Result<Vec<Materia>, String> {
 }
 
 #[tauri::command]
-pub fn create_materia(nome: String, descricao: String, professor_id: Option<i64>, turma_id: Option<i64>, carga_horaria_semanal: i64, cor: String) -> Result<i64, String> {
-    let conn = get_conn().map_err(|e| e.to_string())?;
+pub fn create_materia(state: tauri::State<'_, DbState>, nome: String, descricao: String, professor_id: Option<i64>, turma_id: Option<i64>, carga_horaria_semanal: i64, cor: String) -> Result<i64, String> {
+    let conn = state.lock().map_err(|e| e.to_string())?;
     conn.execute(
         "INSERT INTO materias (nome, descricao, professor_id, turma_id, carga_horaria_semanal, cor) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
         params![nome, descricao, professor_id, turma_id, carga_horaria_semanal, cor],
@@ -50,8 +50,8 @@ pub fn create_materia(nome: String, descricao: String, professor_id: Option<i64>
 }
 
 #[tauri::command]
-pub fn update_materia(id: i64, nome: String, descricao: String, professor_id: Option<i64>, turma_id: Option<i64>, carga_horaria_semanal: i64, cor: String) -> Result<(), String> {
-    let conn = get_conn().map_err(|e| e.to_string())?;
+pub fn update_materia(state: tauri::State<'_, DbState>, id: i64, nome: String, descricao: String, professor_id: Option<i64>, turma_id: Option<i64>, carga_horaria_semanal: i64, cor: String) -> Result<(), String> {
+    let conn = state.lock().map_err(|e| e.to_string())?;
     conn.execute(
         "UPDATE materias SET nome=?1, descricao=?2, professor_id=?3, turma_id=?4, carga_horaria_semanal=?5, cor=?6 WHERE id=?7",
         params![nome, descricao, professor_id, turma_id, carga_horaria_semanal, cor, id],
@@ -60,8 +60,8 @@ pub fn update_materia(id: i64, nome: String, descricao: String, professor_id: Op
 }
 
 #[tauri::command]
-pub fn delete_materia(id: i64) -> Result<(), String> {
-    let conn = get_conn().map_err(|e| e.to_string())?;
+pub fn delete_materia(state: tauri::State<'_, DbState>, id: i64) -> Result<(), String> {
+    let conn = state.lock().map_err(|e| e.to_string())?;
     let count: i64 = conn.query_row(
         "SELECT COUNT(*) FROM provas WHERE materia_id = ?1",
         params![id],

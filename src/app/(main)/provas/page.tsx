@@ -162,7 +162,7 @@ export default function ProvasPage() {
                 <tr key={p.id}>
                   <td>
                     {p.titulo}
-                    {p.is_recuperacao && <span className="badge badge-warning badge-sm ml-2">REC</span>}
+                    {p.is_recuperacao && <span className="badge badge-warning badge-xs ml-2">Recuperação</span>}
                   </td>
                   <td>{materias.find((m) => m.id === p.materia_id)?.nome ?? "-"}</td>
                   <td>{p.data}</td>
