@@ -202,5 +202,6 @@ pub struct Aula {
     pub semestre: String,
     pub turma_id: Option<i64>,
     pub aluno_ids: String,
+    pub bimestre: i64,
 }
 

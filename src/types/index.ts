@@ -188,6 +188,7 @@ export interface Aula {
   semestre: string;
   turma_id: number | null;
   aluno_ids: string;
+  bimestre: number;
 }
 
 export interface ToastState {

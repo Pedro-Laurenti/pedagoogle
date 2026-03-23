@@ -5,7 +5,7 @@ import { invokeCmd } from "@/utils/tauri";
 import Toast from "@/components/Toast";
 import type { Aula, Materia, Turma, Aluno, Configuracoes, ToastState } from "@/types";
 
-interface AulaForm { materia_id: string; dia_semana: string; hora_inicio: string; hora_fim: string; semestre: string; turma_id: string; aluno_ids: string; [k: string]: unknown; }
+interface AulaForm { materia_id: string; dia_semana: string; hora_inicio: string; hora_fim: string; semestre: string; bimestre: string; turma_id: string; aluno_ids: string; [k: string]: unknown; }
 
 const DIAS = ["Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado"];
 const GRADE_DIAS = ["Seg", "Ter", "Qua", "Qui", "Sex"];
@@ -16,7 +16,7 @@ const TOTAL_MINS = MIN_END - MIN_START;
 const PX_MIN = 1.5;
 const SLOT = 50;
 const SEMESTRE_PADRAO = "2026-1";
-const EMPTY: AulaForm = { materia_id: "", dia_semana: "Segunda", hora_inicio: "08:00", hora_fim: "09:00", semestre: SEMESTRE_PADRAO, turma_id: "", aluno_ids: "[]" };
+const EMPTY: AulaForm = { materia_id: "", dia_semana: "Segunda", hora_inicio: "08:00", hora_fim: "09:00", semestre: SEMESTRE_PADRAO, bimestre: "1", turma_id: "", aluno_ids: "[]" };
 
 function toMins(t: string) {
   const [h, m] = t.split(":").map(Number);
@@ -73,7 +73,7 @@ export default function CronogramaPage() {
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    const payload = { materiaId: form.materia_id ? Number(form.materia_id) : null, diaSemana: form.dia_semana, horaInicio: form.hora_inicio, horaFim: form.hora_fim, semestre: form.semestre, turmaId: form.turma_id ? Number(form.turma_id) : null, alunoIds: form.aluno_ids || "[]" };
+    const payload = { materiaId: form.materia_id ? Number(form.materia_id) : null, diaSemana: form.dia_semana, horaInicio: form.hora_inicio, horaFim: form.hora_fim, semestre: form.semestre, bimestre: Number(form.bimestre) || 1, turmaId: form.turma_id ? Number(form.turma_id) : null, alunoIds: form.aluno_ids || "[]" };
     try {
       if (editing !== null) {
         await invokeCmd("update_aula", { id: editing, ...payload });
@@ -101,7 +101,7 @@ export default function CronogramaPage() {
 
   function openEdit(a: Aula) {
     setEditing(a.id);
-    setForm({ materia_id: a.materia_id ? String(a.materia_id) : "", dia_semana: a.dia_semana, hora_inicio: a.hora_inicio, hora_fim: a.hora_fim, semestre: a.semestre, turma_id: a.turma_id ? String(a.turma_id) : "", aluno_ids: a.aluno_ids ?? "[]" });
+    setForm({ materia_id: a.materia_id ? String(a.materia_id) : "", dia_semana: a.dia_semana, hora_inicio: a.hora_inicio, hora_fim: a.hora_fim, semestre: a.semestre, bimestre: String(a.bimestre ?? 1), turma_id: a.turma_id ? String(a.turma_id) : "", aluno_ids: a.aluno_ids ?? "[]" });
     setModal(true);
   }
 
@@ -175,17 +175,24 @@ export default function CronogramaPage() {
                   {DIAS.map(d => <option key={d} value={d}>{d}</option>)}
                 </select>
               </fieldset>
+              <div className="grid grid-cols-2 gap-3">
+                <fieldset className="fieldset">
+                  <legend className="fieldset-legend">Início</legend>
+                  <input type="time" className="input w-full" value={form.hora_inicio} onChange={e => setForm({ ...form, hora_inicio: e.target.value })} required />
+                </fieldset>
+                <fieldset className="fieldset">
+                  <legend className="fieldset-legend">Fim</legend>
+                  <input type="time" className="input w-full" value={form.hora_fim} onChange={e => setForm({ ...form, hora_fim: e.target.value })} required />
+                </fieldset>
+              </div>
               <fieldset className="fieldset">
-                <legend className="fieldset-legend">Hora de Início</legend>
-                <input type="time" className="input w-full" value={form.hora_inicio} onChange={e => setForm({ ...form, hora_inicio: e.target.value })} required />
-              </fieldset>
-              <fieldset className="fieldset">
-                <legend className="fieldset-legend">Hora de Fim</legend>
-                <input type="time" className="input w-full" value={form.hora_fim} onChange={e => setForm({ ...form, hora_fim: e.target.value })} required />
-              </fieldset>
-              <fieldset className="fieldset">
-                <legend className="fieldset-legend">Semestre</legend>
-                <input className="input w-full" value={form.semestre} onChange={e => setForm({ ...form, semestre: e.target.value })} required />
+                <legend className="fieldset-legend">Bimestre</legend>
+                <select className="select w-full" value={form.bimestre} onChange={e => setForm({ ...form, bimestre: e.target.value })}>
+                  <option value="1">1º Bimestre</option>
+                  <option value="2">2º Bimestre</option>
+                  <option value="3">3º Bimestre</option>
+                  <option value="4">4º Bimestre</option>
+                </select>
               </fieldset>
               {config?.usar_turmas && (
                 <fieldset className="fieldset">

@@ -145,6 +145,7 @@ const MIGRATIONS: &[(u32, &str)] = &[
     (44, "ALTER TABLE aulas ADD COLUMN aluno_ids TEXT NOT NULL DEFAULT '[]'"),
     (45, "CREATE TABLE IF NOT EXISTS categoria_lancamentos (id INTEGER PRIMARY KEY AUTOINCREMENT, nome TEXT NOT NULL, cor TEXT NOT NULL DEFAULT '#6366f1'); INSERT OR IGNORE INTO categoria_lancamentos (id, nome, cor) VALUES (1, 'Prova', '#6366f1'), (2, 'Trabalho', '#10b981'), (3, 'Participação', '#f59e0b');"),
     (46, "ALTER TABLE notas ADD COLUMN categoria_id INTEGER REFERENCES categoria_lancamentos(id) ON DELETE SET NULL"),
+    (47, "ALTER TABLE aulas ADD COLUMN bimestre INTEGER NOT NULL DEFAULT 1"),
 ];
 
 fn run_migrations(conn: &Connection) -> Result<()> {
