@@ -58,7 +58,6 @@ pub struct ProfessorCronogramaInput {
 pub struct Materia {
     pub id: i64,
     pub nome: String,
-    pub descricao: String,
     pub professor_id: Option<i64>,
     pub professor_nome: Option<String>,
     pub turma_id: Option<i64>,
@@ -93,17 +92,10 @@ pub struct Prova {
     pub titulo: String,
     pub descricao: String,
     pub materia_id: Option<i64>,
-    pub data: String,
-    pub rodape: String,
-    pub margens: String,
+    pub bimestre: i64,
+    pub ano_letivo: String,
     pub valor_total: f64,
-    pub escola_override: String,
-    pub cidade_override: String,
     pub turma_id: Option<i64>,
-    pub is_recuperacao: bool,
-    pub qr_gabarito: bool,
-    pub duas_colunas: bool,
-    pub paisagem: bool,
     pub updated_at: String,
     pub questoes_count: i64,
 }
@@ -126,17 +118,6 @@ pub struct FrequenciaMateria {
     pub percentual: f64,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
-pub struct BancoQuestao {
-    pub id: i64,
-    pub tipo: String,
-    pub enunciado: String,
-    pub opcoes: String,
-    pub valor: f64,
-    pub tags: String,
-    pub dificuldade: String,
-}
-
 #[derive(Serialize, Deserialize, Clone)]
 pub struct Questao {
     pub id: i64,
@@ -147,8 +128,6 @@ pub struct Questao {
     pub ordem: i64,
     pub valor: f64,
     pub linhas_resposta: i64,
-    pub tags: String,
-    pub dificuldade: String,
 }
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -160,10 +139,6 @@ pub struct QuestaoInput {
     pub opcoes: serde_json::Value,
     pub valor: f64,
     pub linhas_resposta: i64,
-    #[serde(default)]
-    pub tags: String,
-    #[serde(default)]
-    pub dificuldade: String,
 }
 
 #[derive(Serialize, Deserialize, Clone)]

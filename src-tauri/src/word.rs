@@ -80,20 +80,6 @@ fn create_docx_table(rows: &[TableRowData]) -> Table {
     Table::new(table_rows)
 }
 
-fn format_date_pt(date: &str) -> String {
-    let parts: Vec<&str> = date.split('-').collect();
-    if parts.len() != 3 { return date.to_string(); }
-    let dia: u32 = parts[2].parse().unwrap_or(0);
-    let mes = match parts[1] {
-        "01" => "janeiro", "02" => "fevereiro", "03" => "março",
-        "04" => "abril",   "05" => "maio",       "06" => "junho",
-        "07" => "julho",   "08" => "agosto",     "09" => "setembro",
-        "10" => "outubro", "11" => "novembro",   "12" => "dezembro",
-        _ => parts[1],
-    };
-    format!("{} de {} de {}", dia, mes, parts[0])
-}
-
 /// Normal paragraph with given text and half-point font size
 fn par_sz(text: &str, sz: usize) -> Paragraph {
     Paragraph::new().add_run(Run::new().add_text(text).size(sz))
@@ -166,15 +152,14 @@ fn inject_word_page_border(document_xml: Vec<u8>, estilo: &str, margem_folha: f6
 pub fn export_prova_word(id: i64, path: String) -> Result<(), String> {
     let conn = get_conn().map_err(|e| e.to_string())?;
 
-    let (titulo, descricao, rodape, nome_escola, cidade, diretor, professor, data, logo_path,
-         moldura_estilo, margem_folha, margem_moldura, margem_conteudo, prova_margens):
-        (String, String, String, String, String, String, String, String, String, String, f64, f64, f64, String) = conn.query_row(
-        "SELECT p.titulo, p.descricao, p.rodape,
+    let (titulo, descricao, nome_escola, cidade, diretor, professor, logo_path,
+         moldura_estilo, margem_folha, margem_moldura, margem_conteudo):
+        (String, String, String, String, String, String, String, String, f64, f64, f64) = conn.query_row(
+        "SELECT p.titulo, p.descricao,
                 COALESCE(c.nome_escola,''), COALESCE(c.cidade,''), COALESCE(c.diretor,''),
-                COALESCE(prof.nome,''), p.data, COALESCE(c.logo_path,''),
+                COALESCE(prof.nome,''), COALESCE(c.logo_path,''),
                 COALESCE(c.moldura_estilo,'none'),
-                COALESCE(c.margem_folha, 10.0), COALESCE(c.margem_moldura, 5.0), COALESCE(c.margem_conteudo, 5.0),
-                p.margens
+                COALESCE(c.margem_folha, 10.0), COALESCE(c.margem_moldura, 5.0), COALESCE(c.margem_conteudo, 5.0)
          FROM provas p
          LEFT JOIN configuracoes c ON c.id=1
          LEFT JOIN materias m ON m.id=p.materia_id
@@ -182,14 +167,8 @@ pub fn export_prova_word(id: i64, path: String) -> Result<(), String> {
          WHERE p.id=?1",
         params![id],
         |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?,
-                r.get(5)?, r.get(6)?, r.get(7)?, r.get(8)?, r.get(9)?, r.get(10)?, r.get(11)?, r.get(12)?, r.get(13)?)),
+                r.get(5)?, r.get(6)?, r.get(7)?, r.get(8)?, r.get(9)?, r.get(10)?)),
     ).map_err(|e| e.to_string())?;
-    let margem_folha = match prova_margens.as_str() {
-        "estreito" => 15.0,
-        "normal"   => 20.0,
-        "largo"    => 25.0,
-        _          => margem_folha,
-    };
 
     // Calculate total margin = paper margin + frame margin + content margin
     // Convert mm to twips: 1 mm ≈ 56.7 twips (1 inch = 1440 twips, 1 inch = 25.4 mm)
@@ -199,7 +178,7 @@ pub fn export_prova_word(id: i64, path: String) -> Result<(), String> {
     let col_60_emu = ((210.0 - 2.0 * total_margin_mm) * 36000.0 * 0.6) as u32;
 
     let mut stmt = conn.prepare(
-        "SELECT id, prova_id, enunciado, tipo, opcoes, ordem, valor, linhas_resposta, COALESCE(tags,''), COALESCE(dificuldade,'médio') \
+        "SELECT id, prova_id, enunciado, tipo, opcoes, ordem, valor, linhas_resposta \
          FROM questoes WHERE prova_id=?1 ORDER BY ordem"
     ).map_err(|e| e.to_string())?;
     let questoes: Vec<Questao> = stmt.query_map(params![id], |r| {
@@ -209,7 +188,6 @@ pub fn export_prova_word(id: i64, path: String) -> Result<(), String> {
             tipo: r.get(3)?,
             opcoes: serde_json::from_str(&opcoes_str).unwrap_or(serde_json::json!([])),
             ordem: r.get(5)?, valor: r.get(6)?, linhas_resposta: r.get(7)?,
-            tags: r.get(8)?, dificuldade: r.get(9)?,
         })
     }).map_err(|e| e.to_string())?
     .collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())?;
@@ -245,12 +223,7 @@ pub fn export_prova_word(id: i64, path: String) -> Result<(), String> {
     if !nome_escola.is_empty() {
         doc = doc.add_paragraph(par_bold_sz(&nome_escola, 28));
     }
-    let data_cidade = match (!cidade.is_empty(), !data.is_empty()) {
-        (true,  true)  => format!("{}, {}", cidade, format_date_pt(&data)),
-        (true,  false) => cidade.clone(),
-        (false, true)  => format_date_pt(&data),
-        (false, false) => String::new(),
-    };
+    let data_cidade = if !cidade.is_empty() { cidade.clone() } else { String::new() };
     if !data_cidade.is_empty() { doc = doc.add_paragraph(par_sz(&data_cidade, 20)); }
     if !diretor.is_empty()     { doc = doc.add_paragraph(par_sz(&format!("Diretor(a): {}", diretor), 20)); }
     if !professor.is_empty()   { doc = doc.add_paragraph(par_sz(&format!("Professor(a): {}", professor), 20)); }
@@ -407,10 +380,6 @@ pub fn export_prova_word(id: i64, path: String) -> Result<(), String> {
         doc = doc.add_paragraph(par_empty());
     }
 
-    if !rodape.is_empty() {
-        doc = doc.add_paragraph(par_hline());
-        doc = doc.add_paragraph(par_sz(&rodape, 18));
-    }
 
     let file = std::fs::File::create(&path).map_err(|e| e.to_string())?;
     let mut xml_docx = doc.build();

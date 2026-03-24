@@ -154,6 +154,9 @@ const MIGRATIONS: &[(u32, &str)] = &[
     (53, "ALTER TABLE turmas ADD COLUMN turma TEXT NOT NULL DEFAULT ''"),
     (54, "CREATE TABLE IF NOT EXISTS turma_materias (turma_id INTEGER NOT NULL REFERENCES turmas(id) ON DELETE CASCADE, materia_id INTEGER NOT NULL REFERENCES materias(id) ON DELETE CASCADE, PRIMARY KEY (turma_id, materia_id))"),
     (55, "CREATE TABLE IF NOT EXISTS aluno_materias (aluno_id INTEGER NOT NULL REFERENCES alunos(id) ON DELETE CASCADE, materia_id INTEGER NOT NULL REFERENCES materias(id) ON DELETE CASCADE, PRIMARY KEY (aluno_id, materia_id))"),
+    (56, "ALTER TABLE materias DROP COLUMN descricao"),
+    (57, "ALTER TABLE provas ADD COLUMN bimestre INTEGER NOT NULL DEFAULT 1"),
+    (58, "ALTER TABLE provas ADD COLUMN ano_letivo TEXT NOT NULL DEFAULT ''"),
 ];
 
 fn run_migrations(conn: &Connection) -> Result<()> {

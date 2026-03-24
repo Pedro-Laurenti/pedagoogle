@@ -58,7 +58,6 @@ export interface ProfessorCronograma {
 export interface Materia {
   id: number;
   nome: string;
-  descricao: string;
   professor_id: number | null;
   professor_nome?: string;
   turma_id: number | null;
@@ -90,17 +89,10 @@ export interface Prova {
   titulo: string;
   descricao: string;
   materia_id: number | null;
-  data: string;
-  rodape: string;
-  margens: string;
+  bimestre: number;
+  ano_letivo: string;
   valor_total: number;
-  escola_override: string;
-  cidade_override: string;
   turma_id: number | null;
-  is_recuperacao: boolean;
-  qr_gabarito: boolean;
-  duas_colunas: boolean;
-  paisagem: boolean;
   updated_at: string;
   questoes_count: number;
 }
@@ -135,25 +127,21 @@ export interface Questao {
   id: number;
   prova_id: number;
   enunciado: string;
-  tipo: TipoQuestao;
+  tipo: TipoQuestao | 'texto';
   opcoes: OpcaoQuestao[];
   ordem: number;
   valor: number;
   linhas_resposta: number;
-  tags: string;
-  dificuldade: string;
 }
 
 export interface QuestaoInput {
   id?: number;
   tempId?: number;
   enunciado: string;
-  tipo: TipoQuestao;
+  tipo: TipoQuestao | 'texto';
   opcoes: OpcaoQuestao[];
   valor: number;
   linhas_resposta: number;
-  tags: string;
-  dificuldade: string;
 }
 
 export interface CategoriaLancamento {
