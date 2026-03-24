@@ -97,6 +97,31 @@ export interface Prova {
   questoes_count: number;
 }
 
+export interface Atividade {
+  id: number;
+  titulo: string;
+  descricao: string;
+  materia_id: number | null;
+  bimestre: number;
+  ano_letivo: string;
+  valor_total: number;
+  turma_id: number | null;
+  vale_nota: boolean;
+  updated_at: string;
+  questoes_count: number;
+}
+
+export interface AtividadeQuestao {
+  id: number;
+  atividade_id: number;
+  enunciado: string;
+  tipo: TipoQuestao | 'texto';
+  opcoes: OpcaoQuestao[];
+  ordem: number;
+  valor: number;
+  linhas_resposta: number;
+}
+
 export interface Presenca {
   id: number;
   aluno_id: number;

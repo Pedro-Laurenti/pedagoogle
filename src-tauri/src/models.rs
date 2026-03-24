@@ -149,6 +149,33 @@ pub struct CategoriaLancamento {
 }
 
 #[derive(Serialize, Deserialize, Clone)]
+pub struct Atividade {
+    pub id: i64,
+    pub titulo: String,
+    pub descricao: String,
+    pub materia_id: Option<i64>,
+    pub bimestre: i64,
+    pub ano_letivo: String,
+    pub valor_total: f64,
+    pub turma_id: Option<i64>,
+    pub vale_nota: bool,
+    pub updated_at: String,
+    pub questoes_count: i64,
+}
+
+#[derive(Serialize, Deserialize, Clone)]
+pub struct AtividadeQuestao {
+    pub id: i64,
+    pub atividade_id: i64,
+    pub enunciado: String,
+    pub tipo: String,
+    pub opcoes: serde_json::Value,
+    pub ordem: i64,
+    pub valor: f64,
+    pub linhas_resposta: i64,
+}
+
+#[derive(Serialize, Deserialize, Clone)]
 pub struct Nota {
     pub id: i64,
     pub aluno_id: i64,

@@ -6,6 +6,7 @@ mod materias;
 mod alunos;
 mod turmas;
 mod provas;
+mod atividades;
 mod notas;
 mod cronograma;
 mod html_render;
@@ -20,9 +21,10 @@ use materias::*;
 use alunos::*;
 use turmas::*;
 use provas::*;
+use atividades::*;
 use notas::*;
 use cronograma::*;
-use typst_pdf::{export_prova_pdf, export_gabarito_pdf, export_boletim_pdf};
+use typst_pdf::{export_prova_pdf, export_gabarito_pdf, export_boletim_pdf, export_atividade_pdf};
 use word::*;
 use configuracoes::*;
 use frequencia::*;
@@ -59,10 +61,12 @@ pub fn run() {
             list_provas, get_prova, create_prova, update_prova, delete_prova, duplicate_prova,
             list_provas_page,
             list_questoes, replace_questoes,
+            list_atividades, get_atividade, create_atividade, update_atividade, delete_atividade, duplicate_atividade,
+            list_questoes_atividade, replace_questoes_atividade,
             list_notas, create_nota, update_nota, delete_nota,
             list_categoria_lancamentos, create_categoria_lancamento, update_categoria_lancamento, delete_categoria_lancamento,
             list_aulas, create_aula, update_aula, delete_aula, copy_semestre,
-            export_prova_pdf, export_prova_word, export_gabarito_pdf, export_boletim_pdf,
+            export_prova_pdf, export_prova_word, export_gabarito_pdf, export_boletim_pdf, export_atividade_pdf,
             get_configuracoes, save_configuracoes, backup_database, restore_database, check_update,
             list_presencas, upsert_presenca, get_frequencia_aluno,
             get_dashboard_stats, list_proximas_provas, get_alertas, get_medias_por_materia,

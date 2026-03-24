@@ -1,6 +1,7 @@
 import {
   MdDashboard,
   MdAssignment,
+  MdEditNote,
   MdPeople,
   MdSchool,
   MdGrade,
@@ -55,6 +56,14 @@ export const menuItems: MenuItem[] = [
     label: "Provas",
     icon: MdAssignment,
     description: "Criar e gerenciar provas",
+    showInSidebar: true,
+    group: "Conteúdo",
+  },
+  {
+    href: "/atividades",
+    label: "Atividades",
+    icon: MdEditNote,
+    description: "Criar e gerenciar atividades",
     showInSidebar: true,
     group: "Conteúdo",
   },
