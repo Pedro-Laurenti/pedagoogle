@@ -14,12 +14,12 @@ A versão é controlada **pela tag Git**. O GitHub Actions atualiza automaticame
 ```bash
 # 1. Commit todas as mudanças de código
 git add .
-git commit -m "feat: descrição das mudanças"
+git commit -m "1.2.2"
 git push origin main
 
 # 2. Crie a tag e dispare o CI
-git tag v1.2.0
-git push origin v1.2.0
+git tag v1.2.2
+git push origin v1.2.2
 ```
 
 O CI compila para Windows e Linux e cria um rascunho de Release. Abra **github.com/Pedro-Laurenti/pedagoogle/releases**, revise e clique **Publish release**.
