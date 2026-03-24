@@ -65,7 +65,7 @@ pub fn run() {
             list_questoes_atividade, replace_questoes_atividade,
             list_notas, create_nota, update_nota, delete_nota,
             list_categoria_lancamentos, create_categoria_lancamento, update_categoria_lancamento, delete_categoria_lancamento,
-            list_aulas, create_aula, update_aula, delete_aula, copy_semestre,
+            list_aulas, create_aula, create_aulas_recorrentes, update_aula, delete_aula, copy_semestre,
             export_prova_pdf, export_prova_word, export_gabarito_pdf, export_boletim_pdf, export_atividade_pdf,
             get_configuracoes, save_configuracoes, backup_database, restore_database, check_update,
             list_presencas, upsert_presenca, get_frequencia_aluno,
