@@ -159,6 +159,9 @@ const MIGRATIONS: &[(u32, &str)] = &[
     (58, "ALTER TABLE provas ADD COLUMN ano_letivo TEXT NOT NULL DEFAULT ''"),
     (59, "CREATE TABLE IF NOT EXISTS atividades (id INTEGER PRIMARY KEY AUTOINCREMENT, titulo TEXT NOT NULL, descricao TEXT NOT NULL DEFAULT '', materia_id INTEGER REFERENCES materias(id) ON DELETE SET NULL, bimestre INTEGER NOT NULL DEFAULT 1, ano_letivo TEXT NOT NULL DEFAULT '', valor_total REAL NOT NULL DEFAULT 10.0, turma_id INTEGER REFERENCES turmas(id) ON DELETE SET NULL, vale_nota INTEGER NOT NULL DEFAULT 0, updated_at TEXT NOT NULL DEFAULT '')"),
     (60, "CREATE TABLE IF NOT EXISTS questoes_atividade (id INTEGER PRIMARY KEY AUTOINCREMENT, atividade_id INTEGER NOT NULL REFERENCES atividades(id) ON DELETE CASCADE, enunciado TEXT NOT NULL, tipo TEXT NOT NULL, opcoes TEXT NOT NULL DEFAULT '[]', ordem INTEGER NOT NULL DEFAULT 0, valor REAL NOT NULL DEFAULT 0.0, linhas_resposta INTEGER NOT NULL DEFAULT 3)"),
+    (61, "ALTER TABLE notas DROP COLUMN descricao"),
+    (62, "ALTER TABLE categoria_lancamentos ADD COLUMN vincula_provas INTEGER NOT NULL DEFAULT 0"),
+    (63, "UPDATE categoria_lancamentos SET vincula_provas=1 WHERE nome='Prova'"),
 ];
 
 fn run_migrations(conn: &Connection) -> Result<()> {

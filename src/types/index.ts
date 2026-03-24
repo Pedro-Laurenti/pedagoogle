@@ -173,13 +173,13 @@ export interface CategoriaLancamento {
   id: number;
   nome: string;
   cor: string;
+  vincula_provas: boolean;
 }
 
 export interface Nota {
   id: number;
   aluno_id: number;
   prova_id: number | null;
-  descricao: string;
   valor: number;
   updated_at: string;
   categoria_id: number | null;

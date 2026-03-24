@@ -57,16 +57,25 @@ fn map_db_err(e: rusqlite::Error) -> String {
 }
 
 #[tauri::command]
-pub fn list_notas(state: tauri::State<'_, DbState>) -> Result<Vec<Nota>, String> {
+pub fn list_notas(state: tauri::State<'_, DbState>, bimestre: Option<i64>, ano: Option<String>, turma_id: Option<i64>, materia_id: Option<i64>, aluno_id: Option<i64>) -> Result<Vec<Nota>, String> {
     let conn = state.lock().map_err(|e| e.to_string())?;
     let mut stmt = conn.prepare(
-        "SELECT n.id, n.aluno_id, n.prova_id, n.descricao, n.valor, COALESCE(n.updated_at,''), n.categoria_id, cl.nome \
-         FROM notas n LEFT JOIN categoria_lancamentos cl ON cl.id = n.categoria_id ORDER BY n.id DESC"
+        "SELECT n.id, n.aluno_id, n.prova_id, n.valor, COALESCE(n.updated_at,''), n.categoria_id, cl.nome \
+         FROM notas n \
+         LEFT JOIN categoria_lancamentos cl ON cl.id = n.categoria_id \
+         LEFT JOIN provas p ON p.id = n.prova_id \
+         LEFT JOIN alunos a ON a.id = n.aluno_id \
+         WHERE (?1 IS NULL OR n.aluno_id = ?1) \
+         AND (?2 IS NULL OR p.bimestre = ?2) \
+         AND (?3 IS NULL OR p.ano_letivo = ?3) \
+         AND (?4 IS NULL OR p.turma_id = ?4 OR a.turma_id = ?4) \
+         AND (?5 IS NULL OR p.materia_id = ?5) \
+         ORDER BY n.id DESC"
     ).map_err(|e| e.to_string())?;
-    let rows = stmt.query_map([], |r| Ok(Nota {
+    let rows = stmt.query_map(params![aluno_id, bimestre, ano, turma_id, materia_id], |r| Ok(Nota {
         id: r.get(0)?, aluno_id: r.get(1)?, prova_id: r.get(2)?,
-        descricao: r.get(3)?, valor: r.get(4)?, updated_at: r.get(5)?,
-        categoria_id: r.get(6)?, categoria_nome: r.get(7)?,
+        valor: r.get(3)?, updated_at: r.get(4)?,
+        categoria_id: r.get(5)?, categoria_nome: r.get(6)?,
     })).map_err(|e| e.to_string())?;
     rows.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())
 }
@@ -74,22 +83,22 @@ pub fn list_notas(state: tauri::State<'_, DbState>) -> Result<Vec<Nota>, String>
 #[tauri::command]
 pub fn list_categoria_lancamentos(state: tauri::State<'_, DbState>) -> Result<Vec<CategoriaLancamento>, String> {
     let conn = state.lock().map_err(|e| e.to_string())?;
-    let mut stmt = conn.prepare("SELECT id, nome, cor FROM categoria_lancamentos ORDER BY nome").map_err(|e| e.to_string())?;
-    let rows = stmt.query_map([], |r| Ok(CategoriaLancamento { id: r.get(0)?, nome: r.get(1)?, cor: r.get(2)? })).map_err(|e| e.to_string())?;
+    let mut stmt = conn.prepare("SELECT id, nome, cor, COALESCE(vincula_provas, 0) FROM categoria_lancamentos ORDER BY nome").map_err(|e| e.to_string())?;
+    let rows = stmt.query_map([], |r| Ok(CategoriaLancamento { id: r.get(0)?, nome: r.get(1)?, cor: r.get(2)?, vincula_provas: r.get::<_, i64>(3)? != 0 })).map_err(|e| e.to_string())?;
     rows.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-pub fn create_categoria_lancamento(state: tauri::State<'_, DbState>, nome: String, cor: String) -> Result<i64, String> {
+pub fn create_categoria_lancamento(state: tauri::State<'_, DbState>, nome: String, cor: String, vincula_provas: bool) -> Result<i64, String> {
     let conn = state.lock().map_err(|e| e.to_string())?;
-    conn.execute("INSERT INTO categoria_lancamentos (nome, cor) VALUES (?1, ?2)", params![nome, cor]).map_err(map_db_err)?;
+    conn.execute("INSERT INTO categoria_lancamentos (nome, cor, vincula_provas) VALUES (?1, ?2, ?3)", params![nome, cor, vincula_provas as i64]).map_err(map_db_err)?;
     Ok(conn.last_insert_rowid())
 }
 
 #[tauri::command]
-pub fn update_categoria_lancamento(state: tauri::State<'_, DbState>, id: i64, nome: String, cor: String) -> Result<(), String> {
+pub fn update_categoria_lancamento(state: tauri::State<'_, DbState>, id: i64, nome: String, cor: String, vincula_provas: bool) -> Result<(), String> {
     let conn = state.lock().map_err(|e| e.to_string())?;
-    conn.execute("UPDATE categoria_lancamentos SET nome=?1, cor=?2 WHERE id=?3", params![nome, cor, id]).map_err(map_db_err)?;
+    conn.execute("UPDATE categoria_lancamentos SET nome=?1, cor=?2, vincula_provas=?3 WHERE id=?4", params![nome, cor, vincula_provas as i64, id]).map_err(map_db_err)?;
     Ok(())
 }
 
@@ -101,7 +110,7 @@ pub fn delete_categoria_lancamento(state: tauri::State<'_, DbState>, id: i64) ->
 }
 
 #[tauri::command]
-pub fn create_nota(state: tauri::State<'_, DbState>, aluno_id: i64, prova_id: Option<i64>, descricao: String, valor: f64, categoria_id: Option<i64>) -> Result<i64, String> {
+pub fn create_nota(state: tauri::State<'_, DbState>, aluno_id: i64, prova_id: Option<i64>, valor: f64, categoria_id: Option<i64>) -> Result<i64, String> {
     if valor < 0.0 {
         return Err("Nota não pode ser negativa".into());
     }
@@ -117,8 +126,8 @@ pub fn create_nota(state: tauri::State<'_, DbState>, aluno_id: i64, prova_id: Op
         }
     }
     conn.execute(
-        "INSERT INTO notas (aluno_id, prova_id, descricao, valor, categoria_id) VALUES (?1,?2,?3,?4,?5)",
-        params![aluno_id, prova_id, descricao, valor, categoria_id],
+        "INSERT INTO notas (aluno_id, prova_id, valor, categoria_id) VALUES (?1,?2,?3,?4)",
+        params![aluno_id, prova_id, valor, categoria_id],
     ).map_err(map_db_err)?;
     let id = conn.last_insert_rowid();
     log::info!("Criado: nota id={}", id);
@@ -126,7 +135,7 @@ pub fn create_nota(state: tauri::State<'_, DbState>, aluno_id: i64, prova_id: Op
 }
 
 #[tauri::command]
-pub fn update_nota(state: tauri::State<'_, DbState>, id: i64, aluno_id: i64, prova_id: Option<i64>, descricao: String, valor: f64, categoria_id: Option<i64>) -> Result<(), String> {
+pub fn update_nota(state: tauri::State<'_, DbState>, id: i64, aluno_id: i64, prova_id: Option<i64>, valor: f64, categoria_id: Option<i64>) -> Result<(), String> {
     if valor < 0.0 {
         return Err("Nota não pode ser negativa".into());
     }
@@ -142,8 +151,8 @@ pub fn update_nota(state: tauri::State<'_, DbState>, id: i64, aluno_id: i64, pro
         }
     }
     conn.execute(
-        "UPDATE notas SET aluno_id=?1, prova_id=?2, descricao=?3, valor=?4, updated_at=datetime('now'), categoria_id=?6 WHERE id=?5",
-        params![aluno_id, prova_id, descricao, valor, id, categoria_id],
+        "UPDATE notas SET aluno_id=?1, prova_id=?2, valor=?3, updated_at=datetime('now'), categoria_id=?4 WHERE id=?5",
+        params![aluno_id, prova_id, valor, categoria_id, id],
     ).map_err(map_db_err)?;
     Ok(())
 }

@@ -146,6 +146,7 @@ pub struct CategoriaLancamento {
     pub id: i64,
     pub nome: String,
     pub cor: String,
+    pub vincula_provas: bool,
 }
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -180,7 +181,6 @@ pub struct Nota {
     pub id: i64,
     pub aluno_id: i64,
     pub prova_id: Option<i64>,
-    pub descricao: String,
     pub valor: f64,
     pub updated_at: String,
     pub categoria_id: Option<i64>,
