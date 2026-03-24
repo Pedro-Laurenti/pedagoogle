@@ -103,7 +103,7 @@ dependencies = [
 
 [[package]]
 name = "anstyle-query"
-version = "1.1.5"
+version = "1.2.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "40c48f72fd53cd289104fc64099abca73db4166ad86ea0b4341abe65af83dadc"
 dependencies = [
@@ -582,7 +582,7 @@ dependencies = [
 
 [[package]]
 name = "chinese-variant"
-version = "1.1.5"
+version = "1.2.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "58b52a9840ffff5d4d0058ae529fa066a75e794e3125546acfc61c23ad755e49"
 
@@ -3753,7 +3753,7 @@ dependencies = [
 
 [[package]]
 name = "pedagoogle"
-version = "1.1.5"
+version = "1.2.2"
 dependencies = [
  "base64 0.22.1",
  "chrono",
