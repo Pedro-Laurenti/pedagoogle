@@ -1,47 +1,51 @@
 "use client";
-import { useState, useEffect, useCallback, useRef } from "react";
-import { MdAdd, MdEdit, MdDelete, MdUploadFile, MdPerson, MdPhotoCamera } from "react-icons/md";
+import { useState, useEffect, useCallback } from "react";
+import { MdAdd, MdEdit, MdDelete, MdPerson } from "react-icons/md";
 import { invokeCmd } from "@/utils/tauri";
-import { open } from "@tauri-apps/plugin-dialog";
-import { copyFile, mkdir } from "@tauri-apps/plugin-fs";
-import { appDataDir } from "@tauri-apps/api/path";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import Toast from "@/components/Toast";
+import Modal from "@/components/Modal";
 import Pagination from "@/components/Pagination";
-import type { Aluno, Turma, AlunoCsvRow, ToastState } from "@/types";
+import InputImagem from "@/components/inputs/InputImagem";
+import InputMultiSelect from "@/components/inputs/InputMultiSelect";
+import type { Aluno, Turma, Materia, Configuracoes, ToastState } from "@/types";
 
 const PER_PAGE = 20;
 
 interface AlunoForm {
   nome: string;
-  matricula: string;
   turma_id: number | null;
   foto_path: string;
 }
 
-const EMPTY: AlunoForm = { nome: "", matricula: "", turma_id: null, foto_path: "" };
+const EMPTY: AlunoForm = { nome: "", turma_id: null, foto_path: "" };
 
 export default function AlunosPage() {
   const [alunos, setAlunos] = useState<Aluno[]>([]);
   const [turmas, setTurmas] = useState<Turma[]>([]);
+  const [materias, setMaterias] = useState<Materia[]>([]);
+  const [config, setConfig] = useState<Configuracoes | null>(null);
   const [form, setForm] = useState<AlunoForm>(EMPTY);
   const [editing, setEditing] = useState<number | null>(null);
   const [modal, setModal] = useState(false);
+  const [deleteId, setDeleteId] = useState<number | null>(null);
   const [toast, setToast] = useState<ToastState | null>(null);
   const [filtroNome, setFiltroNome] = useState("");
   const [filtroTurma, setFiltroTurma] = useState<number | null>(null);
-  const [csvModal, setCsvModal] = useState(false);
-  const [csvPreview, setCsvPreview] = useState<AlunoCsvRow[]>([]);
+  const [selMaterias, setSelMaterias] = useState<(string | number)[]>([]);
   const [page, setPage] = useState(1);
-  const fileRef = useRef<HTMLInputElement>(null);
 
   const load = useCallback(async () => {
-    const [data, ts] = await Promise.all([
+    const [data, ts, ms, cfg] = await Promise.all([
       invokeCmd<Aluno[]>("list_alunos"),
       invokeCmd<Turma[]>("list_turmas"),
+      invokeCmd<Materia[]>("list_materias"),
+      invokeCmd<Configuracoes>("get_configuracoes"),
     ]);
     setAlunos(data);
     setTurmas(ts);
+    setMaterias(ms);
+    setConfig(cfg);
   }, []);
 
   useEffect(() => { load(); }, [load]);
@@ -54,25 +58,31 @@ export default function AlunosPage() {
   function openCreate() {
     setEditing(null);
     setForm(EMPTY);
+    setSelMaterias([]);
     setModal(true);
   }
 
-  function openEdit(a: Aluno) {
+  async function openEdit(a: Aluno) {
     setEditing(a.id);
-    setForm({ nome: a.nome, matricula: a.matricula, turma_id: a.turma_id, foto_path: a.foto_path });
+    setForm({ nome: a.nome, turma_id: a.turma_id, foto_path: a.foto_path });
+    const ms = await invokeCmd<number[]>("list_aluno_materias", { alunoId: a.id });
+    setSelMaterias(ms);
     setModal(true);
   }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     try {
-      const payload = { nome: form.nome, matricula: form.matricula, turmaId: form.turma_id, fotoPath: form.foto_path };
+      let id = editing;
       if (editing !== null) {
-        await invokeCmd("update_aluno", { id: editing, ...payload });
+        await invokeCmd("update_aluno", { id: editing, nome: form.nome, turmaId: form.turma_id, fotoPath: form.foto_path });
         notify("Aluno atualizado.");
       } else {
-        await invokeCmd("create_aluno", payload);
+        id = await invokeCmd<number>("create_aluno", { nome: form.nome, turmaId: form.turma_id, fotoPath: form.foto_path });
         notify("Aluno criado.");
+      }
+      if (id !== null && !config?.usar_turmas) {
+        await invokeCmd("set_aluno_materias", { alunoId: id, materiaIds: selMaterias });
       }
       setModal(false);
       load();
@@ -81,80 +91,19 @@ export default function AlunosPage() {
     }
   }
 
-  async function pickFoto() {
-    const selected = await open({
-      filters: [{ name: "Imagem", extensions: ["png", "jpg", "jpeg", "gif", "webp", "bmp"] }],
-      multiple: false,
-    });
-    if (!selected || typeof selected !== "string") return;
-    try {
-      const dataDir = await appDataDir();
-      const fotosDir = `${dataDir}/pedagoogle/fotos/alunos`;
-      await mkdir(fotosDir, { recursive: true });
-      const fileName = selected.split(/[\/\\]/).pop() ?? `foto_${Date.now()}.jpg`;
-      const dest = `${fotosDir}/${fileName}`;
-      await copyFile(selected, dest);
-      setForm((f) => ({ ...f, foto_path: dest }));
-    } catch (e) {
-      notify(`Erro ao copiar foto: ${e}`, "error");
-    }
-  }
-
-  function fotoSrc(foto_path: string) {
-    if (!foto_path) return "";
-    // If it's already a full path, use directly; otherwise it's just a filename
-    if (foto_path.includes("/") || foto_path.includes("\\")) {
-      return convertFileSrc(foto_path);
-    }
-    return foto_path; // will be resolved when appDataDir is known
-  }
-
   async function handleDelete(id: number) {
     try {
       await invokeCmd("delete_aluno", { id });
       notify("Aluno removido.");
+      setDeleteId(null);
       load();
-    } catch {
-      notify("Erro ao remover.", "error");
+    } catch (err) {
+      notify(String(err), "error");
     }
-  }
-
-  function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = async (ev) => {
-      const content = ev.target?.result as string;
-      try {
-        const rows = await invokeCmd<AlunoCsvRow[]>("preview_import_alunos_csv", { csvContent: content });
-        setCsvPreview(rows);
-      } catch {
-        notify("Erro ao processar CSV.", "error");
-      }
-    };
-    reader.readAsText(file);
-  }
-
-  async function confirmImport() {
-    try {
-      const count = await invokeCmd<number>("confirm_import_alunos", { rows: csvPreview });
-      notify(`${count} aluno(s) importado(s).`);
-      setCsvModal(false);
-      setCsvPreview([]);
-      if (fileRef.current) fileRef.current.value = "";
-      load();
-    } catch {
-      notify("Erro ao importar.", "error");
-    }
-  }
-
-  function openCsvModal() {
-    setCsvPreview([]);
-    setCsvModal(true);
   }
 
   const alunosFiltrados = alunos.filter(a =>
-    (!filtroNome || a.nome.toLowerCase().includes(filtroNome.toLowerCase()) || a.matricula.includes(filtroNome)) &&
+    (!filtroNome || a.nome.toLowerCase().includes(filtroNome.toLowerCase())) &&
     (!filtroTurma || a.turma_id === filtroTurma)
   );
   const alunosPagina = alunosFiltrados.slice((page - 1) * PER_PAGE, page * PER_PAGE);
@@ -163,33 +112,30 @@ export default function AlunosPage() {
     <div>
       <div className="flex items-center justify-between mb-6">
         <h1 className="text-3xl font-bold">Alunos</h1>
-        <div className="flex gap-2">
-          <button className="btn btn-outline" onClick={openCsvModal}>
-            <MdUploadFile size={20} /> Importar CSV
-          </button>
-          <button className="btn btn-primary" onClick={openCreate}>
-            <MdAdd size={20} /> Novo Aluno
-          </button>
-        </div>
+        <button className="btn btn-primary" onClick={openCreate}>
+          <MdAdd size={20} /> Novo Aluno
+        </button>
       </div>
 
       <div className="mb-4 flex items-center gap-3 flex-wrap">
         <input
           className="input input-sm"
-          placeholder="Buscar por nome ou matrícula"
+          placeholder="Buscar por nome"
           value={filtroNome}
           onChange={(e) => { setFiltroNome(e.target.value); setPage(1); }}
         />
-        <select
-          className="select select-sm"
-          value={filtroTurma ?? ""}
-          onChange={(e) => { setFiltroTurma(e.target.value === "" ? null : Number(e.target.value)); setPage(1); }}
-        >
-          <option value="">Todas as turmas</option>
-          {turmas.map((t) => (
-            <option key={t.id} value={t.id}>{t.nome}</option>
-          ))}
-        </select>
+        {config?.usar_turmas && (
+          <select
+            className="select select-sm"
+            value={filtroTurma ?? ""}
+            onChange={(e) => { setFiltroTurma(e.target.value === "" ? null : Number(e.target.value)); setPage(1); }}
+          >
+            <option value="">Todas as turmas</option>
+            {turmas.map((t) => (
+              <option key={t.id} value={t.id}>{t.nome}</option>
+            ))}
+          </select>
+        )}
       </div>
 
       <div className="overflow-x-auto">
@@ -198,8 +144,7 @@ export default function AlunosPage() {
             <tr>
               <th>Foto</th>
               <th>Nome</th>
-              <th>Matrícula</th>
-              <th>Turma</th>
+              {config?.usar_turmas && <th>Turma</th>}
               <th></th>
             </tr>
           </thead>
@@ -214,13 +159,12 @@ export default function AlunosPage() {
                   )}
                 </td>
                 <td>{a.nome}</td>
-                <td>{a.matricula}</td>
-                <td>{a.turma_nome ?? "—"}</td>
+                {config?.usar_turmas && <td>{a.turma_nome ?? "—"}</td>}
                 <td className="flex gap-2">
                   <button className="btn btn-sm btn-ghost" onClick={() => openEdit(a)}>
                     <MdEdit />
                   </button>
-                  <button className="btn btn-sm btn-ghost text-error" onClick={() => handleDelete(a.id)}>
+                  <button className="btn btn-sm btn-ghost text-error" onClick={() => setDeleteId(a.id)}>
                     <MdDelete />
                   </button>
                 </td>
@@ -231,119 +175,62 @@ export default function AlunosPage() {
       </div>
       <Pagination page={page} total={alunosFiltrados.length} perPage={PER_PAGE} onChange={setPage} />
 
-      {modal && (
-        <div className="modal modal-open">
-          <div className="modal-box">
-            <h3 className="font-bold text-lg mb-4">{editing ? "Editar" : "Novo"} Aluno</h3>
-            <form onSubmit={handleSubmit} className="flex flex-col gap-4">
-              <fieldset className="fieldset">
-                <legend className="fieldset-legend">Nome</legend>
-                <input
-                  className="input w-full"
-                  value={form.nome}
-                  onChange={(e) => setForm({ ...form, nome: e.target.value })}
-                  required
-                />
-              </fieldset>
-              <fieldset className="fieldset">
-                <legend className="fieldset-legend">Matrícula</legend>
-                <input
-                  className="input w-full"
-                  value={form.matricula}
-                  onChange={(e) => setForm({ ...form, matricula: e.target.value })}
-                />
-              </fieldset>
-              <fieldset className="fieldset">
-                <legend className="fieldset-legend">Turma</legend>
-                <select
-                  className="select w-full"
-                  value={form.turma_id ?? ""}
-                  onChange={(e) => setForm({ ...form, turma_id: e.target.value === "" ? null : Number(e.target.value) })}
-                >
-                  <option value="">Nenhuma</option>
-                  {turmas.map((t) => (
-                    <option key={t.id} value={t.id}>{t.nome}</option>
-                  ))}
-                </select>
-              </fieldset>
-              <fieldset className="fieldset">
-                <legend className="fieldset-legend">Foto</legend>
-                <div className="flex items-center gap-3">
-                  {form.foto_path && (
-                    <img
-                      src={convertFileSrc(form.foto_path)}
-                      className="w-16 h-16 rounded-full object-cover border"
-                      alt="Foto"
-                      onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
-                    />
-                  )}
-                  <button type="button" className="btn btn-outline btn-sm gap-1" onClick={pickFoto}>
-                    <MdPhotoCamera size={16} /> Escolher foto
-                  </button>
-                  {form.foto_path && (
-                    <button type="button" className="btn btn-ghost btn-xs text-error" onClick={() => setForm((f) => ({ ...f, foto_path: "" }))}>
-                      Remover
-                    </button>
-                  )}
-                </div>
-              </fieldset>
-              <div className="modal-action">
-                <button type="button" className="btn" onClick={() => setModal(false)}>Cancelar</button>
-                <button type="submit" className="btn btn-primary">Salvar</button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {csvModal && (
-        <div className="modal modal-open">
-          <div className="modal-box max-w-2xl">
-            <h3 className="font-bold text-lg mb-4">Importar Alunos via CSV</h3>
-            <p className="text-sm text-base-content/70 mb-4">Formato: <code>nome,matricula,turma_id</code> (primera linha ignorada)</p>
+      <Modal open={modal} onClose={() => setModal(false)} title={`${editing !== null ? "Editar" : "Novo"} Aluno`}>
+        <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+          <fieldset className="fieldset">
+            <legend className="fieldset-legend">Nome *</legend>
             <input
-              ref={fileRef}
-              type="file"
-              accept=".csv"
-              className="file-input w-full mb-4"
-              onChange={handleFileChange}
+              className="input w-full"
+              value={form.nome}
+              onChange={(e) => setForm({ ...form, nome: e.target.value })}
+              required
             />
-            {csvPreview.length > 0 && (
-              <div className="overflow-x-auto max-h-64">
-                <table className="table table-zebra table-sm w-full">
-                  <thead>
-                    <tr>
-                      <th>Nome</th>
-                      <th>Matrícula</th>
-                      <th>ID Turma</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {csvPreview.map((row, i) => (
-                      <tr key={i}>
-                        <td>{row.nome}</td>
-                        <td>{row.matricula}</td>
-                        <td>{row.turma_id ?? "—"}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-            <div className="modal-action">
-              <button type="button" className="btn" onClick={() => { setCsvModal(false); setCsvPreview([]); if (fileRef.current) fileRef.current.value = ""; }}>Cancelar</button>
-              <button
-                type="button"
-                className="btn btn-primary"
-                disabled={csvPreview.length === 0}
-                onClick={confirmImport}
+          </fieldset>
+          {config?.usar_turmas ? (
+            <fieldset className="fieldset">
+              <legend className="fieldset-legend">Turma</legend>
+              <select
+                className="select w-full"
+                value={form.turma_id ?? ""}
+                onChange={(e) => setForm({ ...form, turma_id: e.target.value === "" ? null : Number(e.target.value) })}
               >
-                Confirmar ({csvPreview.length})
-              </button>
-            </div>
+                <option value="">Nenhuma</option>
+                {turmas.map((t) => (
+                  <option key={t.id} value={t.id}>{t.nome}</option>
+                ))}
+              </select>
+            </fieldset>
+          ) : (
+            <InputMultiSelect
+              label="Matérias *"
+              options={materias.map(m => ({ value: m.id, label: m.nome }))}
+              value={selMaterias}
+              onChange={setSelMaterias}
+            />
+          )}
+          <InputImagem
+            label="Foto"
+            value={form.foto_path}
+            onChange={(path) => setForm({ ...form, foto_path: path })}
+          />
+          <div className="modal-action">
+            <button type="button" className="btn" onClick={() => setModal(false)}>Cancelar</button>
+            <button type="submit" className="btn btn-primary">Salvar</button>
           </div>
-        </div>
-      )}
+        </form>
+      </Modal>
+
+      <Modal
+        open={deleteId !== null}
+        onClose={() => setDeleteId(null)}
+        title="Confirmar exclusão"
+        variant="confirm"
+        color="error"
+        confirmLabel="Excluir"
+        onConfirm={() => handleDelete(deleteId!)}
+      >
+        Deseja remover este aluno? Esta ação não pode ser desfeita.
+      </Modal>
 
       {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
     </div>

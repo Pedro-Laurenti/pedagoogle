@@ -17,7 +17,9 @@ fn map_db_err(e: rusqlite::Error) -> String {
 pub fn list_materias(state: tauri::State<'_, DbState>) -> Result<Vec<Materia>, String> {
     let conn = state.lock().map_err(|e| e.to_string())?;
     let mut stmt = conn.prepare(
-        "SELECT m.id, m.nome, m.descricao, m.professor_id, p.nome, m.turma_id, t.nome, m.carga_horaria_semanal, m.cor, COALESCE(m.icone,'MdBook') \
+        "SELECT m.id, m.nome, m.descricao, m.professor_id, p.nome, m.turma_id, \
+         CASE WHEN COALESCE(t.ano,'') != '' THEN t.ano || ' - ' || t.turma ELSE COALESCE(t.nome,'') END, \
+         m.carga_horaria_semanal, m.cor, COALESCE(m.icone,'MdBook') \
          FROM materias m \
          LEFT JOIN professores p ON p.id = m.professor_id \
          LEFT JOIN turmas t ON t.id = m.turma_id \

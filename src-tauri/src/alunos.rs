@@ -1,5 +1,5 @@
 use rusqlite::params;
-use crate::db::{DbState, get_conn};
+use crate::db::DbState;
 use crate::models::*;
 
 fn map_db_err(e: rusqlite::Error) -> String {
@@ -18,7 +18,9 @@ pub fn list_alunos(state: tauri::State<'_, DbState>) -> Result<Vec<Aluno>, Strin
     let conn = state.lock().map_err(|e| e.to_string())?;
     let mut stmt = conn
         .prepare(
-            "SELECT a.id, a.nome, a.turma_id, a.matricula, t.nome, a.foto_path, COALESCE(a.updated_at,'') \
+            "SELECT a.id, a.nome, a.turma_id, \
+             CASE WHEN COALESCE(t.ano,'') != '' THEN t.ano || ' - ' || t.turma ELSE COALESCE(t.nome,'') END, \
+             COALESCE(a.foto_path,''), COALESCE(a.updated_at,'') \
              FROM alunos a LEFT JOIN turmas t ON a.turma_id = t.id \
              ORDER BY a.nome",
         )
@@ -29,10 +31,9 @@ pub fn list_alunos(state: tauri::State<'_, DbState>) -> Result<Vec<Aluno>, Strin
                 id: r.get(0)?,
                 nome: r.get(1)?,
                 turma_id: r.get(2)?,
-                matricula: r.get(3)?,
-                turma_nome: r.get(4)?,
-                foto_path: r.get::<_, Option<String>>(5)?.unwrap_or_default(),
-                updated_at: r.get(6)?,
+                turma_nome: r.get(3)?,
+                foto_path: r.get(4)?,
+                updated_at: r.get(5)?,
             })
         })
         .map_err(|e| e.to_string())?;
@@ -44,7 +45,9 @@ pub fn list_alunos_page(state: tauri::State<'_, DbState>, page: i64, per_page: i
     let conn = state.lock().map_err(|e| e.to_string())?;
     let mut stmt = conn
         .prepare(
-            "SELECT a.id, a.nome, a.turma_id, a.matricula, t.nome, a.foto_path, COALESCE(a.updated_at,'') \
+            "SELECT a.id, a.nome, a.turma_id, \
+             CASE WHEN COALESCE(t.ano,'') != '' THEN t.ano || ' - ' || t.turma ELSE COALESCE(t.nome,'') END, \
+             COALESCE(a.foto_path,''), COALESCE(a.updated_at,'') \
              FROM alunos a LEFT JOIN turmas t ON a.turma_id = t.id \
              ORDER BY a.nome LIMIT ?1 OFFSET (?2-1)*?1",
         )
@@ -55,10 +58,9 @@ pub fn list_alunos_page(state: tauri::State<'_, DbState>, page: i64, per_page: i
                 id: r.get(0)?,
                 nome: r.get(1)?,
                 turma_id: r.get(2)?,
-                matricula: r.get(3)?,
-                turma_nome: r.get(4)?,
-                foto_path: r.get::<_, Option<String>>(5)?.unwrap_or_default(),
-                updated_at: r.get(6)?,
+                turma_nome: r.get(3)?,
+                foto_path: r.get(4)?,
+                updated_at: r.get(5)?,
             })
         })
         .map_err(|e| e.to_string())?;
@@ -66,11 +68,11 @@ pub fn list_alunos_page(state: tauri::State<'_, DbState>, page: i64, per_page: i
 }
 
 #[tauri::command]
-pub fn create_aluno(state: tauri::State<'_, DbState>, nome: String, matricula: String, turma_id: Option<i64>, foto_path: String) -> Result<i64, String> {
+pub fn create_aluno(state: tauri::State<'_, DbState>, nome: String, turma_id: Option<i64>, foto_path: String) -> Result<i64, String> {
     let conn = state.lock().map_err(|e| e.to_string())?;
     conn.execute(
-        "INSERT INTO alunos (nome, matricula, turma_id, foto_path) VALUES (?1, ?2, ?3, ?4)",
-        params![nome, matricula, turma_id, foto_path],
+        "INSERT INTO alunos (nome, turma_id, foto_path) VALUES (?1, ?2, ?3)",
+        params![nome, turma_id, foto_path],
     )
     .map_err(map_db_err)?;
     let id = conn.last_insert_rowid();
@@ -79,43 +81,35 @@ pub fn create_aluno(state: tauri::State<'_, DbState>, nome: String, matricula: S
 }
 
 #[tauri::command]
-pub fn update_aluno(state: tauri::State<'_, DbState>, id: i64, nome: String, matricula: String, turma_id: Option<i64>, foto_path: String) -> Result<(), String> {
+pub fn update_aluno(state: tauri::State<'_, DbState>, id: i64, nome: String, turma_id: Option<i64>, foto_path: String) -> Result<(), String> {
     let conn = state.lock().map_err(|e| e.to_string())?;
     conn.execute(
-        "UPDATE alunos SET nome=?1, matricula=?2, turma_id=?3, foto_path=?4, updated_at=datetime('now') WHERE id=?5",
-        params![nome, matricula, turma_id, foto_path, id],
+        "UPDATE alunos SET nome=?1, turma_id=?2, foto_path=?3, updated_at=datetime('now') WHERE id=?4",
+        params![nome, turma_id, foto_path, id],
     )
     .map_err(map_db_err)?;
     Ok(())
 }
 
 #[tauri::command]
-pub fn preview_import_alunos_csv(csv_content: String) -> Result<Vec<AlunoCsvRow>, String> {
-    let mut rows = Vec::new();
-    for line in csv_content.lines().skip(1) {
-        let line = line.trim();
-        if line.is_empty() { continue; }
-        let cols: Vec<&str> = line.split(',').collect();
-        let nome = cols.get(0).unwrap_or(&"").trim().to_string();
-        let matricula = cols.get(1).unwrap_or(&"").trim().to_string();
-        let turma_id = cols.get(2).and_then(|s| s.trim().parse::<i64>().ok());
-        rows.push(AlunoCsvRow { nome, matricula, turma_id });
+pub fn set_aluno_materias(state: tauri::State<'_, DbState>, aluno_id: i64, materia_ids: Vec<i64>) -> Result<(), String> {
+    let conn = state.lock().map_err(|e| e.to_string())?;
+    conn.execute("DELETE FROM aluno_materias WHERE aluno_id=?1", params![aluno_id]).map_err(|e| e.to_string())?;
+    for mid in materia_ids {
+        conn.execute(
+            "INSERT OR IGNORE INTO aluno_materias (aluno_id, materia_id) VALUES (?1,?2)",
+            params![aluno_id, mid],
+        ).map_err(|e| e.to_string())?;
     }
-    Ok(rows)
+    Ok(())
 }
 
 #[tauri::command]
-pub fn confirm_import_alunos(rows: Vec<AlunoCsvRow>) -> Result<i64, String> {
-    let conn = get_conn().map_err(|e| e.to_string())?;
-    let mut count = 0i64;
-    for row in &rows {
-        conn.execute(
-            "INSERT INTO alunos (nome, matricula, turma_id) VALUES (?1, ?2, ?3)",
-            params![row.nome, row.matricula, row.turma_id],
-        ).map_err(map_db_err)?;
-        count += 1;
-    }
-    Ok(count)
+pub fn list_aluno_materias(state: tauri::State<'_, DbState>, aluno_id: i64) -> Result<Vec<i64>, String> {
+    let conn = state.lock().map_err(|e| e.to_string())?;
+    let mut stmt = conn.prepare("SELECT materia_id FROM aluno_materias WHERE aluno_id=?1").map_err(|e| e.to_string())?;
+    let rows = stmt.query_map(params![aluno_id], |r| r.get::<_, i64>(0)).map_err(|e| e.to_string())?;
+    rows.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())
 }
 
 #[tauri::command]

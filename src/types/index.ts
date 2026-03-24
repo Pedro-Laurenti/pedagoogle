@@ -41,11 +41,7 @@ export interface Configuracoes {
 export interface Professor {
   id: number;
   nome: string;
-  email: string;
-  telefone: string;
-  especialidade: string;
   aulas_por_semana: number;
-  observacoes: string;
 }
 
 export interface ProfessorCronograma {
@@ -75,7 +71,8 @@ export interface Materia {
 export interface Turma {
   id: number;
   nome: string;
-  ano_letivo: string;
+  ano: string;
+  turma: string;
   turno: string;
 }
 
@@ -83,16 +80,9 @@ export interface Aluno {
   id: number;
   nome: string;
   turma_id: number | null;
-  matricula: string;
   turma_nome?: string;
   foto_path: string;
   updated_at: string;
-}
-
-export interface AlunoCsvRow {
-  nome: string;
-  matricula: string;
-  turma_id: number | null;
 }
 
 export interface Prova {

@@ -150,6 +150,10 @@ const MIGRATIONS: &[(u32, &str)] = &[
     (49, "ALTER TABLE configuracoes ADD COLUMN minutos_por_aula INTEGER NOT NULL DEFAULT 45"),
     (50, "ALTER TABLE configuracoes ADD COLUMN hora_entrada TEXT NOT NULL DEFAULT '07:00'"),
     (51, "ALTER TABLE configuracoes ADD COLUMN dias_letivos_semana INTEGER NOT NULL DEFAULT 5"),
+    (52, "ALTER TABLE turmas ADD COLUMN ano TEXT NOT NULL DEFAULT ''"),
+    (53, "ALTER TABLE turmas ADD COLUMN turma TEXT NOT NULL DEFAULT ''"),
+    (54, "CREATE TABLE IF NOT EXISTS turma_materias (turma_id INTEGER NOT NULL REFERENCES turmas(id) ON DELETE CASCADE, materia_id INTEGER NOT NULL REFERENCES materias(id) ON DELETE CASCADE, PRIMARY KEY (turma_id, materia_id))"),
+    (55, "CREATE TABLE IF NOT EXISTS aluno_materias (aluno_id INTEGER NOT NULL REFERENCES alunos(id) ON DELETE CASCADE, materia_id INTEGER NOT NULL REFERENCES materias(id) ON DELETE CASCADE, PRIMARY KEY (aluno_id, materia_id))"),
 ];
 
 fn run_migrations(conn: &Connection) -> Result<()> {

@@ -29,11 +29,7 @@ pub struct Configuracoes {
 pub struct Professor {
     pub id: i64,
     pub nome: String,
-    pub email: String,
-    pub telefone: String,
-    pub especialidade: String,
     pub aulas_por_semana: i64,
-    pub observacoes: String,
 }
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -76,7 +72,8 @@ pub struct Materia {
 pub struct Turma {
     pub id: i64,
     pub nome: String,
-    pub ano_letivo: String,
+    pub ano: String,
+    pub turma: String,
     pub turno: String,
 }
 
@@ -85,17 +82,9 @@ pub struct Aluno {
     pub id: i64,
     pub nome: String,
     pub turma_id: Option<i64>,
-    pub matricula: String,
     pub turma_nome: Option<String>,
     pub foto_path: String,
     pub updated_at: String,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct AlunoCsvRow {
-    pub nome: String,
-    pub matricula: String,
-    pub turma_id: Option<i64>,
 }
 
 #[derive(Serialize, Deserialize, Clone)]

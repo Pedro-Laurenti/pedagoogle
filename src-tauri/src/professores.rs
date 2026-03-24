@@ -6,25 +6,20 @@ use crate::models::{Professor, ProfessorCronograma, ProfessorCronogramaInput};
 pub fn list_professores() -> Result<Vec<Professor>, String> {
     let conn = get_conn().map_err(|e| e.to_string())?;
     let mut stmt = conn.prepare(
-        "SELECT id, nome, email, \
-         COALESCE(telefone,''), COALESCE(especialidade,''), \
-         COALESCE(aulas_por_semana,0), COALESCE(observacoes,'') \
-         FROM professores ORDER BY nome"
+        "SELECT id, nome, COALESCE(aulas_por_semana,0) FROM professores ORDER BY nome"
     ).map_err(|e| e.to_string())?;
     let rows = stmt.query_map([], |r| Ok(Professor {
-        id: r.get(0)?, nome: r.get(1)?, email: r.get(2)?,
-        telefone: r.get(3)?, especialidade: r.get(4)?,
-        aulas_por_semana: r.get(5)?, observacoes: r.get(6)?,
+        id: r.get(0)?, nome: r.get(1)?, aulas_por_semana: r.get(2)?,
     })).map_err(|e| e.to_string())?;
     rows.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-pub fn create_professor(nome: String, email: String, telefone: String, especialidade: String, aulas_por_semana: i64, observacoes: String) -> Result<i64, String> {
+pub fn create_professor(nome: String, aulas_por_semana: i64) -> Result<i64, String> {
     let conn = get_conn().map_err(|e| e.to_string())?;
     conn.execute(
-        "INSERT INTO professores (nome, email, telefone, especialidade, aulas_por_semana, observacoes) VALUES (?1,?2,?3,?4,?5,?6)",
-        params![nome, email, telefone, especialidade, aulas_por_semana, observacoes],
+        "INSERT INTO professores (nome, aulas_por_semana) VALUES (?1,?2)",
+        params![nome, aulas_por_semana],
     ).map_err(|e| e.to_string())?;
     let id = conn.last_insert_rowid();
     log::info!("Criado: professor id={}", id);
@@ -32,11 +27,11 @@ pub fn create_professor(nome: String, email: String, telefone: String, especiali
 }
 
 #[tauri::command]
-pub fn update_professor(id: i64, nome: String, email: String, telefone: String, especialidade: String, aulas_por_semana: i64, observacoes: String) -> Result<(), String> {
+pub fn update_professor(id: i64, nome: String, aulas_por_semana: i64) -> Result<(), String> {
     let conn = get_conn().map_err(|e| e.to_string())?;
     conn.execute(
-        "UPDATE professores SET nome=?1, email=?2, telefone=?3, especialidade=?4, aulas_por_semana=?5, observacoes=?6 WHERE id=?7",
-        params![nome, email, telefone, especialidade, aulas_por_semana, observacoes, id],
+        "UPDATE professores SET nome=?1, aulas_por_semana=?2 WHERE id=?3",
+        params![nome, aulas_por_semana, id],
     ).map_err(|e| e.to_string())?;
     Ok(())
 }
