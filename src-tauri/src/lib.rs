@@ -13,7 +13,6 @@ mod html_render;
 mod typst_pdf;
 mod word;
 mod configuracoes;
-mod frequencia;
 
 use dashboard::*;
 use professores::*;
@@ -27,7 +26,6 @@ use cronograma::*;
 use typst_pdf::{export_prova_pdf, export_gabarito_pdf, export_boletim_pdf, export_atividade_pdf};
 use word::*;
 use configuracoes::*;
-use frequencia::*;
 use tauri::Manager;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -68,7 +66,6 @@ pub fn run() {
             list_aulas, create_aula, create_aulas_recorrentes, update_aula, delete_aula, copy_semestre,
             export_prova_pdf, export_prova_word, export_gabarito_pdf, export_boletim_pdf, export_atividade_pdf,
             get_configuracoes, save_configuracoes, backup_database, restore_database, check_update,
-            list_presencas, upsert_presenca, get_frequencia_aluno,
             get_dashboard_stats, list_proximas_provas, get_alertas, get_medias_por_materia,
         ])
         .run(tauri::generate_context!())

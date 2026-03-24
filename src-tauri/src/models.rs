@@ -101,24 +101,6 @@ pub struct Prova {
 }
 
 #[derive(Serialize, Deserialize, Clone)]
-pub struct Presenca {
-    pub id: i64,
-    pub aluno_id: i64,
-    pub aula_id: i64,
-    pub aluno_nome: String,
-    pub data: String,
-    pub presente: bool,
-}
-
-#[derive(Serialize, Deserialize, Clone)]
-pub struct FrequenciaMateria {
-    pub materia_nome: String,
-    pub total_aulas: i64,
-    pub presencas: i64,
-    pub percentual: f64,
-}
-
-#[derive(Serialize, Deserialize, Clone)]
 pub struct Questao {
     pub id: i64,
     pub prova_id: i64,

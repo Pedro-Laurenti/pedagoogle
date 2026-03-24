@@ -25,7 +25,6 @@ interface ConfigForm {
   tema: string;
   usar_turmas: boolean;
   usar_professores: boolean;
-  usar_frequencia: boolean;
   usar_recuperacao: boolean;
   aulas_por_dia: number;
   minutos_por_aula: number;
@@ -59,7 +58,6 @@ const EMPTY: ConfigForm = {
   tema: "light",
   usar_turmas: true,
   usar_professores: true,
-  usar_frequencia: true,
   usar_recuperacao: true,
   aulas_por_dia: 6,
   minutos_por_aula: 45,
@@ -130,7 +128,7 @@ export default function ConfiguracoesPage() {
         tema: form.tema,
         usarTurmas: form.usar_turmas,
         usarProfessores: form.usar_professores,
-        usarFrequencia: form.usar_frequencia,
+        usarFrequencia: false,
         usarRecuperacao: form.usar_recuperacao,
         aulasPorDia: form.aulas_por_dia,
         minutosPorAula: form.minutos_por_aula,
@@ -389,7 +387,6 @@ export default function ConfiguracoesPage() {
           {([
             { key: "usar_turmas", label: "Turmas", desc: "Gerenciar turmas e vínculos" },
             { key: "usar_professores", label: "Professores", desc: "Cadastro e cronograma de professores" },
-            { key: "usar_frequencia", label: "Frequência", desc: "Controle de presença" },
             { key: "usar_recuperacao", label: "Recuperação", desc: "Provas e notas de recuperação" },
           ] as const).map(({ key, label, desc }) => (
             <label key={key} className="cursor-pointer border border-base-300 rounded-lg p-3 flex items-start gap-3 hover:border-base-content/30 transition-colors">

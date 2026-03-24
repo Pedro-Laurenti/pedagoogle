@@ -6,6 +6,8 @@ pub struct DashboardStats {
     pub total_provas: i64,
     pub total_alunos: i64,
     pub total_materias: i64,
+    pub total_notas: i64,
+    pub total_aulas: i64,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -34,7 +36,13 @@ pub fn get_dashboard_stats() -> Result<DashboardStats, String> {
     let total_materias: i64 = conn
         .query_row("SELECT COUNT(*) FROM materias", [], |r| r.get(0))
         .map_err(|e| e.to_string())?;
-    Ok(DashboardStats { total_provas, total_alunos, total_materias })
+    let total_notas: i64 = conn
+        .query_row("SELECT COUNT(*) FROM notas", [], |r| r.get(0))
+        .map_err(|e| e.to_string())?;
+    let total_aulas: i64 = conn
+        .query_row("SELECT COUNT(*) FROM aulas", [], |r| r.get(0))
+        .map_err(|e| e.to_string())?;
+    Ok(DashboardStats { total_provas, total_alunos, total_materias, total_notas, total_aulas })
 }
 
 #[tauri::command]

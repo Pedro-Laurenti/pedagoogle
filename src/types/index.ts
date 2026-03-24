@@ -122,22 +122,6 @@ export interface AtividadeQuestao {
   linhas_resposta: number;
 }
 
-export interface Presenca {
-  id: number;
-  aluno_id: number;
-  aula_id: number;
-  aluno_nome: string;
-  data: string;
-  presente: boolean;
-}
-
-export interface FrequenciaMateria {
-  materia_nome: string;
-  total_aulas: number;
-  presencas: number;
-  percentual: number;
-}
-
 export interface BancoQuestao {
   id: number;
   tipo: string;
@@ -207,6 +191,8 @@ export interface DashboardStats {
   total_provas: number;
   total_alunos: number;
   total_materias: number;
+  total_notas: number;
+  total_aulas: number;
 }
 
 export interface ProximaProva {

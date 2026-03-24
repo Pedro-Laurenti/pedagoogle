@@ -9,7 +9,6 @@ import {
   MdSettings,
   MdGroups,
   MdPersonOutline,
-  MdFactCheck,
 } from "react-icons/md";
 import type { IconType } from "react-icons";
 
@@ -22,7 +21,7 @@ export interface MenuItem {
   group?: string;
   showInSidebar?: boolean;
   parentHref?: string;
-  feature?: "usar_turmas" | "usar_professores" | "usar_frequencia" | "usar_recuperacao";
+  feature?: "usar_turmas" | "usar_professores" | "usar_recuperacao";
 }
 
 export const menuItems: MenuItem[] = [
@@ -98,15 +97,6 @@ export const menuItems: MenuItem[] = [
     icon: MdCalendarToday,
     description: "Grade semanal de aulas",
     showInSidebar: true,
-    group: "Avaliação",
-  },
-  {
-    href: "/frequencia",
-    label: "Frequência",
-    icon: MdFactCheck,
-    description: "Controle de presença",
-    showInSidebar: true,
-    feature: "usar_frequencia",
     group: "Avaliação",
   },
   {
