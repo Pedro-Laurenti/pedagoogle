@@ -374,7 +374,7 @@ export default function ProvaEditor({ provaId, materias, turmas, usarTurmas, onC
             </fieldset>
           )}
 
-          <fieldset className={`fieldset md:col-span-2${!usarTurmas ? " md:col-start-1" : ""}`}>
+          <fieldset className={`fieldset md:col-span-2 ${!usarTurmas ? " md:col-start-1" : ""}`}>
             <legend className="fieldset-legend">Instruções / Descrição</legend>
             <RichEditor
               value={form.descricao}
