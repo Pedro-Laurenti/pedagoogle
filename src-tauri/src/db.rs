@@ -162,6 +162,11 @@ const MIGRATIONS: &[(u32, &str)] = &[
     (61, "ALTER TABLE notas DROP COLUMN descricao"),
     (62, "ALTER TABLE categoria_lancamentos ADD COLUMN vincula_provas INTEGER NOT NULL DEFAULT 0"),
     (63, "UPDATE categoria_lancamentos SET vincula_provas=1 WHERE nome='Prova'"),
+    (64, "ALTER TABLE questoes ADD COLUMN resposta TEXT NOT NULL DEFAULT ''"),
+    (65, "ALTER TABLE questoes_atividade ADD COLUMN resposta TEXT NOT NULL DEFAULT ''"),
+    (66, "ALTER TABLE questoes ADD COLUMN espaco_rascunho INTEGER NOT NULL DEFAULT 0"),
+    (67, "ALTER TABLE questoes_atividade ADD COLUMN espaco_rascunho INTEGER NOT NULL DEFAULT 0"),
+    (68, "ALTER TABLE configuracoes ADD COLUMN estado TEXT NOT NULL DEFAULT ''"),
 ];
 
 fn run_migrations(conn: &Connection) -> Result<()> {

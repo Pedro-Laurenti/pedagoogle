@@ -1,9 +1,9 @@
 "use client";
 import { open } from "@tauri-apps/plugin-dialog";
-import { copyFile, mkdir } from "@tauri-apps/plugin-fs";
+import { copyFile, mkdir, readFile } from "@tauri-apps/plugin-fs";
 import { appDataDir, join } from "@tauri-apps/api/path";
-import { convertFileSrc } from "@tauri-apps/api/core";
 import { MdImage, MdDelete } from "react-icons/md";
+import { useState, useEffect } from "react";
 
 interface Props {
   value: string;
@@ -12,6 +12,21 @@ interface Props {
 }
 
 export default function InputImagem({ value, onChange, label }: Props) {
+  const [previewSrc, setPreviewSrc] = useState<string>("");
+
+  useEffect(() => {
+    if (!value) { setPreviewSrc(""); return; }
+    readFile(value).then((bytes) => {
+      const ext = value.split(".").pop()?.toLowerCase() ?? "png";
+      const mime = ext === "jpg" || ext === "jpeg" ? "image/jpeg"
+        : ext === "gif" ? "image/gif"
+        : ext === "webp" ? "image/webp"
+        : "image/png";
+      const b64 = btoa(String.fromCharCode(...bytes));
+      setPreviewSrc(`data:${mime};base64,${b64}`);
+    }).catch(() => setPreviewSrc(""));
+  }, [value]);
+
   async function handleSelecionar() {
     const filePath = await open({
       filters: [{ name: "Imagem", extensions: ["png", "jpg", "jpeg", "gif", "webp"] }],
@@ -31,9 +46,9 @@ export default function InputImagem({ value, onChange, label }: Props) {
     <fieldset className="fieldset">
       {label && <legend className="fieldset-legend">{label}</legend>}
       <div className="flex flex-col gap-2">
-        {value && (
+        {previewSrc && (
           <img
-            src={convertFileSrc(value)}
+            src={previewSrc}
             alt="Imagem selecionada"
             className="max-h-40 rounded-box object-contain border border-base-300"
           />

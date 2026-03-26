@@ -108,16 +108,16 @@ pub fn duplicate_prova(state: tauri::State<'_, DbState>, id: i64) -> Result<i64,
     ).map_err(|e| e.to_string())?;
     let new_id = conn.last_insert_rowid();
     let mut stmt = conn.prepare(
-        "SELECT enunciado, tipo, opcoes, ordem, valor, linhas_resposta FROM questoes WHERE prova_id=?1 ORDER BY ordem"
+        "SELECT enunciado, tipo, opcoes, ordem, valor, linhas_resposta, COALESCE(resposta,''), COALESCE(espaco_rascunho,0) FROM questoes WHERE prova_id=?1 ORDER BY ordem"
     ).map_err(|e| e.to_string())?;
-    let questoes: Vec<(String, String, String, i64, f64, i64)> = stmt.query_map(params![id], |r| {
-        Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?))
+    let questoes: Vec<(String, String, String, i64, f64, i64, String, i64)> = stmt.query_map(params![id], |r| {
+        Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?, r.get(6)?, r.get(7)?))
     }).map_err(|e| e.to_string())?
     .collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())?;
-    for (enunciado, tipo, opcoes, ordem, valor, linhas_resposta) in questoes {
+    for (enunciado, tipo, opcoes, ordem, valor, linhas_resposta, resposta, espaco_rascunho) in questoes {
         conn.execute(
-            "INSERT INTO questoes (prova_id, enunciado, tipo, opcoes, ordem, valor, linhas_resposta) VALUES (?1,?2,?3,?4,?5,?6,?7)",
-            params![new_id, enunciado, tipo, opcoes, ordem, valor, linhas_resposta],
+            "INSERT INTO questoes (prova_id, enunciado, tipo, opcoes, ordem, valor, linhas_resposta, resposta, espaco_rascunho) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9)",
+            params![new_id, enunciado, tipo, opcoes, ordem, valor, linhas_resposta, resposta, espaco_rascunho],
         ).map_err(|e| e.to_string())?;
     }
     Ok(new_id)
@@ -127,7 +127,7 @@ pub fn duplicate_prova(state: tauri::State<'_, DbState>, id: i64) -> Result<i64,
 pub fn list_questoes(state: tauri::State<'_, DbState>, prova_id: i64) -> Result<Vec<Questao>, String> {
     let conn = state.lock().map_err(|e| e.to_string())?;
     let mut stmt = conn.prepare(
-        "SELECT id, prova_id, enunciado, tipo, opcoes, ordem, valor, linhas_resposta FROM questoes WHERE prova_id=?1 ORDER BY ordem"
+        "SELECT id, prova_id, enunciado, tipo, opcoes, ordem, valor, linhas_resposta, COALESCE(resposta,''), COALESCE(espaco_rascunho,0) FROM questoes WHERE prova_id=?1 ORDER BY ordem"
     ).map_err(|e| e.to_string())?;
     let rows = stmt.query_map(params![prova_id], |r| {
         let opcoes_str: String = r.get(4)?;
@@ -136,6 +136,7 @@ pub fn list_questoes(state: tauri::State<'_, DbState>, prova_id: i64) -> Result<
             tipo: r.get(3)?,
             opcoes: serde_json::from_str(&opcoes_str).unwrap_or(serde_json::json!([])),
             ordem: r.get(5)?, valor: r.get(6)?, linhas_resposta: r.get(7)?,
+            resposta: r.get(8)?, espaco_rascunho: r.get(9)?,
         })
     }).map_err(|e| e.to_string())?;
     rows.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())
@@ -158,8 +159,8 @@ pub fn replace_questoes(state: tauri::State<'_, DbState>, prova_id: i64, questoe
     for (i, q) in questoes.iter().enumerate() {
         let opcoes = serde_json::to_string(&q.opcoes).unwrap_or_else(|_| "[]".into());
         conn.execute(
-            "INSERT INTO questoes (prova_id, enunciado, tipo, opcoes, ordem, valor, linhas_resposta) VALUES (?1,?2,?3,?4,?5,?6,?7)",
-            params![prova_id, q.enunciado, q.tipo, opcoes, i as i64, q.valor, q.linhas_resposta],
+            "INSERT INTO questoes (prova_id, enunciado, tipo, opcoes, ordem, valor, linhas_resposta, resposta, espaco_rascunho) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9)",
+            params![prova_id, q.enunciado, q.tipo, opcoes, i as i64, q.valor, q.linhas_resposta, q.resposta.as_deref().unwrap_or(""), q.espaco_rascunho],
         ).map_err(|e| e.to_string())?;
     }
     Ok(())

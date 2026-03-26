@@ -4,12 +4,14 @@ export type TipoQuestao =
   | "verdadeiro_falso"
   | "completar_lacunas"
   | "associacao"
-  | "ordenar";
+  | "ordenar"
+  | "letras";
 
 export interface OpcaoQuestao {
   texto: string;
   correta: boolean;
   par?: string;
+  linhas?: number;
 }
 
 export type MolduraEstilo = 'none' | 'simple' | 'double' | 'ornate' | 'classic' | 'modern';
@@ -18,6 +20,7 @@ export interface Configuracoes {
   nome_escola: string;
   logo_path: string;
   cidade: string;
+  estado: string;
   diretor: string;
   moldura_estilo: MolduraEstilo;
   margem_folha: number;
@@ -120,6 +123,8 @@ export interface AtividadeQuestao {
   ordem: number;
   valor: number;
   linhas_resposta: number;
+  resposta: string;
+  espaco_rascunho: number;
 }
 
 export interface BancoQuestao {
@@ -141,6 +146,8 @@ export interface Questao {
   ordem: number;
   valor: number;
   linhas_resposta: number;
+  resposta: string;
+  espaco_rascunho: number;
 }
 
 export interface QuestaoInput {
@@ -151,6 +158,8 @@ export interface QuestaoInput {
   opcoes: OpcaoQuestao[];
   valor: number;
   linhas_resposta: number;
+  resposta?: string;
+  espaco_rascunho: number;
 }
 
 export interface CategoriaLancamento {

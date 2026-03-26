@@ -6,7 +6,7 @@ use crate::models::Configuracoes;
 pub fn get_configuracoes() -> Result<Configuracoes, String> {
     let conn = get_conn().map_err(|e| e.to_string())?;
     conn.query_row(
-        "SELECT nome_escola, logo_path, cidade, diretor,
+        "SELECT nome_escola, logo_path, cidade, COALESCE(estado,''), diretor,
                 COALESCE(moldura_estilo, 'none'), COALESCE(margem_folha, 15.0),
                 COALESCE(margem_moldura, 5.0), COALESCE(margem_conteudo, 5.0),
                 COALESCE(fonte, 'New Computer Modern'),
@@ -20,27 +20,27 @@ pub fn get_configuracoes() -> Result<Configuracoes, String> {
         [],
         |r| Ok(Configuracoes {
             nome_escola: r.get(0)?, logo_path: r.get(1)?,
-            cidade: r.get(2)?, diretor: r.get(3)?,
-            moldura_estilo: r.get(4)?, margem_folha: r.get(5)?,
-            margem_moldura: r.get(6)?, margem_conteudo: r.get(7)?,
-            fonte: r.get(8)?,
-            nota_minima: r.get(9)?, ano_letivo: r.get(10)?,
-            tamanho_fonte: r.get(11)?, tema: r.get(12)?,
-            usar_turmas: r.get::<_, i64>(13)? != 0,
-            usar_professores: r.get::<_, i64>(14)? != 0,
-            usar_frequencia: r.get::<_, i64>(15)? != 0,
-            usar_recuperacao: r.get::<_, i64>(16)? != 0,
-            aulas_por_dia: r.get(17)?,
-            minutos_por_aula: r.get(18)?,
-            hora_entrada: r.get(19)?,
-            dias_letivos_semana: r.get(20)?,
+            cidade: r.get(2)?, estado: r.get(3)?, diretor: r.get(4)?,
+            moldura_estilo: r.get(5)?, margem_folha: r.get(6)?,
+            margem_moldura: r.get(7)?, margem_conteudo: r.get(8)?,
+            fonte: r.get(9)?,
+            nota_minima: r.get(10)?, ano_letivo: r.get(11)?,
+            tamanho_fonte: r.get(12)?, tema: r.get(13)?,
+            usar_turmas: r.get::<_, i64>(14)? != 0,
+            usar_professores: r.get::<_, i64>(15)? != 0,
+            usar_frequencia: r.get::<_, i64>(16)? != 0,
+            usar_recuperacao: r.get::<_, i64>(17)? != 0,
+            aulas_por_dia: r.get(18)?,
+            minutos_por_aula: r.get(19)?,
+            hora_entrada: r.get(20)?,
+            dias_letivos_semana: r.get(21)?,
         }),
     ).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 pub fn save_configuracoes(
-    nome_escola: String, logo_path: String, cidade: String, diretor: String,
+    nome_escola: String, logo_path: String, cidade: String, estado: String, diretor: String,
     moldura_estilo: String, margem_folha: f64, margem_moldura: f64, margem_conteudo: f64,
     fonte: String, nota_minima: f64, ano_letivo: String, tamanho_fonte: i64, tema: String,
     usar_turmas: bool, usar_professores: bool, usar_frequencia: bool, usar_recuperacao: bool,
@@ -48,13 +48,13 @@ pub fn save_configuracoes(
 ) -> Result<(), String> {
     let conn = get_conn().map_err(|e| e.to_string())?;
     conn.execute(
-        "UPDATE configuracoes SET nome_escola=?1, logo_path=?2, cidade=?3, diretor=?4,
-         moldura_estilo=?5, margem_folha=?6, margem_moldura=?7, margem_conteudo=?8,
-         fonte=?9, nota_minima=?10, ano_letivo=?11, tamanho_fonte=?12, tema=?13,
-         usar_turmas=?14, usar_professores=?15, usar_frequencia=?16, usar_recuperacao=?17,
-         aulas_por_dia=?18, minutos_por_aula=?19, hora_entrada=?20, dias_letivos_semana=?21
+        "UPDATE configuracoes SET nome_escola=?1, logo_path=?2, cidade=?3, estado=?4, diretor=?5,
+         moldura_estilo=?6, margem_folha=?7, margem_moldura=?8, margem_conteudo=?9,
+         fonte=?10, nota_minima=?11, ano_letivo=?12, tamanho_fonte=?13, tema=?14,
+         usar_turmas=?15, usar_professores=?16, usar_frequencia=?17, usar_recuperacao=?18,
+         aulas_por_dia=?19, minutos_por_aula=?20, hora_entrada=?21, dias_letivos_semana=?22
          WHERE id=1",
-        params![nome_escola, logo_path, cidade, diretor, moldura_estilo, margem_folha,
+        params![nome_escola, logo_path, cidade, estado, diretor, moldura_estilo, margem_folha,
                 margem_moldura, margem_conteudo, fonte, nota_minima, ano_letivo, tamanho_fonte, tema,
                 usar_turmas as i64, usar_professores as i64, usar_frequencia as i64, usar_recuperacao as i64,
                 aulas_por_dia, minutos_por_aula, hora_entrada, dias_letivos_semana],

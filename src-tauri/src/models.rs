@@ -5,6 +5,7 @@ pub struct Configuracoes {
     pub nome_escola: String,
     pub logo_path: String,
     pub cidade: String,
+    pub estado: String,
     pub diretor: String,
     pub moldura_estilo: String,
     pub margem_folha: f64,
@@ -110,6 +111,8 @@ pub struct Questao {
     pub ordem: i64,
     pub valor: f64,
     pub linhas_resposta: i64,
+    pub resposta: String,
+    pub espaco_rascunho: i64,
 }
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -121,6 +124,10 @@ pub struct QuestaoInput {
     pub opcoes: serde_json::Value,
     pub valor: f64,
     pub linhas_resposta: i64,
+    #[serde(default)]
+    pub resposta: Option<String>,
+    #[serde(default)]
+    pub espaco_rascunho: i64,
 }
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -156,6 +163,8 @@ pub struct AtividadeQuestao {
     pub ordem: i64,
     pub valor: f64,
     pub linhas_resposta: i64,
+    pub resposta: String,
+    pub espaco_rascunho: i64,
 }
 
 #[derive(Serialize, Deserialize, Clone)]

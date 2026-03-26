@@ -12,7 +12,7 @@ import type { Materia, Prova, Questao, QuestaoInput, OpcaoQuestao, TipoQuestao, 
 
 const TIPOS: (TipoQuestao | "texto")[] = [
   "dissertativa", "multipla_escolha", "verdadeiro_falso",
-  "completar_lacunas", "associacao", "ordenar",
+  "completar_lacunas", "associacao", "ordenar", "letras",
 ];
 const TIPO_LABELS: Record<TipoQuestao | "texto", string> = {
   dissertativa: "Dissertativa",
@@ -21,6 +21,7 @@ const TIPO_LABELS: Record<TipoQuestao | "texto", string> = {
   completar_lacunas: "Completar Lacunas",
   associacao: "Associação",
   ordenar: "Ordenar/Sequenciar",
+  letras: "Por Letras (A, B, C...)",
   texto: "Bloco de Texto",
 };
 
@@ -57,12 +58,13 @@ const EMPTY_FORM: ProvaForm = {
 
 const newQuestao = (): QuestaoInput => ({
   enunciado: "", tipo: "dissertativa", opcoes: [], valor: 0,
-  linhas_resposta: 3, tempId: Date.now() + Math.random(),
+  linhas_resposta: 3, resposta: "", espaco_rascunho: 0,
+  tempId: Date.now() + Math.random(),
 });
 
 const newTexto = (): QuestaoInput => ({
   enunciado: "", tipo: "texto", opcoes: [], valor: 0,
-  linhas_resposta: 0, tempId: Date.now() + Math.random(),
+  linhas_resposta: 0, resposta: "", espaco_rascunho: 0, tempId: Date.now() + Math.random(),
 });
 
 function somaQuestoes(questoes: QuestaoInput[]) {
@@ -97,6 +99,7 @@ export default function ProvaEditor({ provaId, materias, turmas, usarTurmas, onC
     setQuestoes(qs.map((q) => ({
       id: q.id, enunciado: q.enunciado, tipo: q.tipo,
       opcoes: q.opcoes, valor: q.valor, linhas_resposta: q.linhas_resposta,
+      resposta: q.resposta ?? "", espaco_rascunho: q.espaco_rascunho ?? 0,
     })));
   }, [provaId]);
 
@@ -229,17 +232,19 @@ export default function ProvaEditor({ provaId, materias, turmas, usarTurmas, onC
     }
   }
 
-  async function handleExportGabarito() {
+  async function handleExportGabarito(format: "pdf" | "word") {
     if (!provaId) { onNotify("Salve a prova antes de exportar.", "warning"); return; }
     const titulo = gerarTituloPreview(materias, form.materia_id, form.bimestre);
     const safeName = (titulo || "prova").replace(/[^a-zA-Z0-9\s]/g, "").trim().replace(/\s+/g, "_");
+    const ext = format === "pdf" ? "pdf" : "docx";
     const filePath = await save({
-      defaultPath: `${safeName}_gabarito.pdf`,
-      filters: [{ name: "PDF", extensions: ["pdf"] }],
+      defaultPath: `${safeName}_gabarito.${ext}`,
+      filters: [{ name: format === "pdf" ? "PDF" : "Word", extensions: [ext] }],
     });
     if (!filePath) return;
+    const cmd = format === "pdf" ? "export_gabarito_pdf" : "export_gabarito_word";
     try {
-      await invokeCmd("export_gabarito_pdf", { id: provaId, path: filePath });
+      await invokeCmd(cmd, { id: provaId, path: filePath });
       onNotify("Gabarito exportado com sucesso.");
     } catch (e) {
       onNotify(`Erro ao exportar gabarito: ${e}`, "error");
@@ -268,9 +273,15 @@ export default function ProvaEditor({ provaId, materias, turmas, usarTurmas, onC
             <button className="btn btn-sm btn-outline gap-1" onClick={() => handleExport("pdf")}>
               <MdPictureAsPdf size={18} /> PDF
             </button>
-            <button className="btn btn-sm btn-outline gap-1" onClick={handleExportGabarito}>
-              <MdAssignmentTurnedIn size={18} /> Gabarito
-            </button>
+            <div className="dropdown dropdown-end">
+              <button tabIndex={0} className="btn btn-sm btn-outline gap-1">
+                <MdAssignmentTurnedIn size={18} /> Gabarito
+              </button>
+              <ul tabIndex={0} className="dropdown-content menu menu-xs bg-base-100 rounded-box shadow z-10 w-44 p-1">
+                <li><button onClick={() => handleExportGabarito("pdf")}><MdPictureAsPdf size={13} /> PDF</button></li>
+                <li><button onClick={() => handleExportGabarito("word")}><MdDescription size={13} /> Word</button></li>
+              </ul>
+            </div>
             <button className="btn btn-sm btn-outline gap-1" onClick={() => handleExport("word")}>
               <MdDescription size={18} /> Word
             </button>
@@ -498,6 +509,34 @@ export default function ProvaEditor({ provaId, materias, turmas, usarTurmas, onC
                       </fieldset>
                     )}
 
+                    {/* Resposta / Gabarito (for all non-text types that aren't self-contained) */}
+                    {!isTexto && (q.tipo === "dissertativa" || q.tipo === "completar_lacunas") && (
+                      <fieldset className="fieldset">
+                        <legend className="fieldset-legend">Gabarito / Resposta esperada <span className="text-xs opacity-50">(opcional)</span></legend>
+                        <input
+                          className="input input-sm w-full"
+                          value={q.resposta ?? ""}
+                          onChange={(e) => updateQuestao(idx, "resposta", e.target.value)}
+                          placeholder="Resposta modelo para o gabarito"
+                        />
+                      </fieldset>
+                    )}
+
+                    {/* Espaço para rascunho */}
+                    {!isTexto && (
+                      <fieldset className="fieldset">
+                        <legend className="fieldset-legend">Linhas para rascunho <span className="text-xs opacity-50">(após a questão)</span></legend>
+                        <input
+                          type="number"
+                          min="0"
+                          max="20"
+                          className="input input-sm w-24"
+                          value={q.espaco_rascunho ?? 0}
+                          onChange={(e) => updateQuestao(idx, "espaco_rascunho", parseInt(e.target.value) || 0)}
+                        />
+                      </fieldset>
+                    )}
+
                     {/* V ou F */}
                     {q.tipo === "verdadeiro_falso" && (
                       <div>
@@ -583,6 +622,37 @@ export default function ProvaEditor({ provaId, materias, turmas, usarTurmas, onC
                             <span className="text-base-content/30 text-xs">↔</span>
                             <input className="input input-sm" value={o.par ?? ""} onChange={(e) => updateOpcao(idx, oIdx, "par", e.target.value)} placeholder="Coluna B" />
                             <button className="btn btn-xs btn-ghost text-error" onClick={() => removeOpcao(idx, oIdx)}><MdDelete size={12} /></button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {/* Letras */}
+                    {q.tipo === "letras" && (
+                      <div>
+                        <div className="flex items-center justify-between mb-2">
+                          <span className="text-sm font-medium">Sub-questões por letra</span>
+                          <button className="btn btn-xs btn-outline" onClick={() => addOpcao(idx)}>
+                            <MdAdd size={12} /> Letra
+                          </button>
+                        </div>
+                        {q.opcoes.map((o, oIdx) => (
+                          <div key={oIdx} className="flex flex-col gap-1 mb-3 p-2 border border-base-300 rounded">
+                            <div className="flex gap-2 items-center">
+                              <span className="text-sm font-medium w-6 text-primary">{String.fromCharCode(65 + oIdx)})</span>
+                              <input className="input input-sm flex-1" value={o.texto} onChange={(e) => updateOpcao(idx, oIdx, "texto", e.target.value)} placeholder={`Sub-questão ${String.fromCharCode(65 + oIdx)}`} />
+                              <button className="btn btn-xs btn-ghost text-error" onClick={() => removeOpcao(idx, oIdx)}><MdDelete size={12} /></button>
+                            </div>
+                            <div className="flex gap-3 items-center pl-8 flex-wrap">
+                              <label className="flex items-center gap-1 text-xs">
+                                Linhas resposta:
+                                <input type="number" min="1" max="10" className="input input-xs w-16" value={(o as OpcaoQuestao & { linhas?: number }).linhas ?? 1} onChange={(e) => updateOpcao(idx, oIdx, "linhas" as keyof OpcaoQuestao, e.target.value)} />
+                              </label>
+                              <label className="flex items-center gap-1 text-xs">
+                                Gabarito:
+                                <input className="input input-xs flex-1 min-w-32" value={o.par ?? ""} onChange={(e) => updateOpcao(idx, oIdx, "par", e.target.value)} placeholder="Resposta esperada" />
+                              </label>
+                            </div>
                           </div>
                         ))}
                       </div>

@@ -13,6 +13,7 @@ interface ConfigForm {
   nome_escola: string;
   logo_path: string;
   cidade: string;
+  estado: string;
   diretor: string;
   moldura_estilo: MolduraEstilo;
   margem_folha: number;
@@ -46,6 +47,7 @@ const EMPTY: ConfigForm = {
   nome_escola: "",
   logo_path: "",
   cidade: "",
+  estado: "",
   diretor: "",
   moldura_estilo: "none",
   margem_folha: 15,
@@ -116,6 +118,7 @@ export default function ConfiguracoesPage() {
         nomeEscola: form.nome_escola,
         logoPath: form.logo_path,
         cidade: form.cidade,
+        estado: form.estado,
         diretor: form.diretor,
         molduraEstilo: form.moldura_estilo,
         margemFolha: form.margem_folha,
@@ -185,6 +188,16 @@ export default function ConfiguracoesPage() {
             value={form.cidade}
             onChange={(e) => setForm({ ...form, cidade: e.target.value })}
             placeholder="Ex: São Paulo"
+          />
+        </fieldset>
+        <fieldset className="fieldset">
+          <legend className="fieldset-legend">Estado (UF)</legend>
+          <input
+            className="input w-full"
+            value={form.estado}
+            onChange={(e) => setForm({ ...form, estado: e.target.value })}
+            placeholder="Ex: SP"
+            maxLength={2}
           />
         </fieldset>
         <fieldset className="fieldset">

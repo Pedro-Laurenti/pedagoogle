@@ -222,6 +222,9 @@ fn latex_to_typst(latex: &str) -> String {
     let s = s.replace("\\\\", "; ");
     let s = s.replace("\\,",  " ").replace("\\ ", " ");
 
+    // Remove LaTeX comment characters and macro argument markers
+    let s = s.replace('#', "");
+
     // Remove any remaining unknown LaTeX commands
     let s = Regex::new(r"\\[a-zA-Z]+").unwrap().replace_all(&s, "").to_string();
 
@@ -644,8 +647,8 @@ fn tema_to_primary_color(tema: &str) -> &'static str {
 }
 
 /// Return a Typst background content expression that draws a page frame.
-/// Uses absolute A4 dimensions (210×297 mm) with `m` = margem_folha offset from paper edge.
-fn generate_frame_background(estilo: &str, m: f64) -> String {
+/// m = margem_folha (from page edge), mm = margem_moldura (inner offset for double-border styles).
+fn generate_frame_background(estilo: &str, m: f64, _mm: f64) -> String {
     const FW: f64 = 210.0;
     const FH: f64 = 297.0;
     match estilo {
@@ -655,7 +658,8 @@ fn generate_frame_background(estilo: &str, m: f64) -> String {
             m = m, w = FW - 2.0 * m, h = FH - 2.0 * m
         ),
         "double" => {
-            let m2 = m + 3.0;
+            let gap = 1.5_f64; // small fixed gap between the two lines
+            let m2 = m + gap;
             format!(
                 "{{ place(top + left, dx: {m:.2}mm, dy: {m:.2}mm, \
                  rect(width: {w1:.2}mm, height: {h1:.2}mm, stroke: 0.5pt + black, fill: none)); \
@@ -686,7 +690,7 @@ fn generate_frame_background(estilo: &str, m: f64) -> String {
             )
         }
         "classic" => {
-            let m2 = m + 4.0;
+            let m2 = m + 1.5; // small fixed gap between thick and thin line
             format!(
                 "{{ place(top + left, dx: {m:.2}mm, dy: {m:.2}mm, \
                  rect(width: {w1:.2}mm, height: {h1:.2}mm, stroke: 1.5pt + black, fill: none)); \
@@ -730,9 +734,11 @@ fn build_typst_source(
     descricao: &str,
     nome_escola: &str,
     cidade: &str,
+    estado: &str,
     professor: &str,
+    diretor: &str,
     logo_path: &str,
-    cor_primaria: &str,
+    _cor_primaria: &str,
     questoes: &[Questao],
     moldura_estilo: &str,
     margem_folha: f64,
@@ -747,7 +753,7 @@ fn build_typst_source(
 
     let total_margin = margem_folha + margem_moldura + margem_conteudo;
     let bg_expr = if moldura_estilo != "none" {
-        format!(", background: {}", generate_frame_background(moldura_estilo, margem_folha))
+        format!(", background: {}", generate_frame_background(moldura_estilo, margem_folha, margem_moldura))
     } else {
         String::new()
     };
@@ -760,12 +766,6 @@ fn build_typst_source(
     src.push_str("#set par(justify: false, leading: 0.65em)\n");
     src.push_str("#set math.equation(numbering: none)\n\n");
 
-    // ── Decorative top band ──────────────────────────────────────────────────
-    src.push_str(&format!(
-        "#rect(width: 100%, height: 2.5mm, fill: rgb(\"{}\"), stroke: none)\n#v(1mm)\n",
-        cor_primaria
-    ));
-
     // ── Load logo ────────────────────────────────────────────────────────────
     let logo_ext = std::path::Path::new(logo_path)
         .extension().and_then(|e| e.to_str()).unwrap_or("png").to_string();
@@ -776,65 +776,101 @@ fn build_typst_source(
         } else { false }
     } else { false };
 
-    let logo_col_content = if has_logo {
-        format!("align(center + horizon)[#image(\"logo_escola.{}\", fit: \"contain\", height: 22mm)]", logo_ext)
+    let cidade_estado = if !estado.is_empty() && !cidade.is_empty() {
+        format!("{} — {}", escape_typst(cidade), escape_typst(estado))
+    } else if !estado.is_empty() {
+        escape_typst(estado).to_string()
     } else {
-        "align(center + horizon)[]".to_string()
-    };
-
-    let cidade_data = if !cidade.is_empty() {
-        format!("{}, ___/___", escape_typst(cidade))
-    } else {
-        "___/___".to_string()
+        escape_typst(cidade).to_string()
     };
     let prof_fill = escape_typst(professor);
+    let dir_fill = escape_typst(diretor);
 
-    // ── Two-column header grid ───────────────────────────────────────────────
-    src.push_str(&format!(
-        "#grid(\n  columns: (2fr, 8fr),\n  column-gutter: 4mm,\n  {},\n  block(width: 100%)[\n",
-        logo_col_content
-    ));
+    // ── Header (unified bordered block) ────────────────────────────────────
+    // Build the fields column content
+    let mut fields = String::new();
+
+    // Line 1: School name
     if !nome_escola.is_empty() {
-        src.push_str(&format!(
-            "    #align(center)[#text(weight: \"bold\", size: 13pt)[{}]]\n",
-            escape_typst(nome_escola)
+        fields.push_str(&format!("{}\n\n", escape_typst(&nome_escola.to_uppercase())));
+    }
+
+    // Line 2: Diretor
+    if !diretor.is_empty() {
+        fields.push_str(&format!(
+            "Diretor(a): {}\n\n",
+            dir_fill
+        ));
+    } else {
+        fields.push_str("Diretor(a): #box(width: 1fr, line(length: 100%, stroke: 0.5pt))\n\n");
+    }
+
+    // Line 3: Cidade, Estado, Data
+    {
+        let loc_part = if !cidade_estado.is_empty() {
+            format!("{}, ", cidade_estado)
+        } else { String::new() };
+        fields.push_str(&format!(
+            "{}Data: #box(width: 1fr, line(length: 100%, stroke: 0.5pt))\n\n",
+            loc_part
         ));
     }
-    if !cidade.is_empty() {
-        src.push_str(&format!(
-            "    #align(center)[#text(size: 9pt)[{}]]\n",
-            escape_typst(cidade)
-        ));
+
+    // Line 4: Professor
+    if !professor.is_empty() {
+        fields.push_str(&format!("Professor(a): {}\n\n", prof_fill));
+    } else {
+        fields.push_str("Professor(a): #box(width: 1fr, line(length: 100%, stroke: 0.5pt))\n\n");
     }
-    src.push_str("    #v(1.5mm)\n");
-    src.push_str(&format!(
-        "    #grid(\n      columns: (2.2cm, 1fr, 3.2cm, 1fr),\n      column-gutter: 1.5mm, row-gutter: 1.5mm,\n      [#text(size: 8pt, weight: \"bold\")[Data:]], [#text(size: 8pt)[{}]],\n      [#text(size: 8pt, weight: \"bold\")[Professor(a):]],[#box(width: 100%, height: 4mm, stroke: (bottom: 0.5pt + black))[{}]],\n    )\n",
-        cidade_data, prof_fill
-    ));
-    src.push_str("    #v(1mm)\n");
-    src.push_str(
-        "    #grid(\n      columns: (1.5cm, 1fr, 1.5cm, 1fr, 1.5cm, 1fr, 1.5cm, 1fr, 1.5cm, 1fr),\n      column-gutter: 1mm, row-gutter: 1mm,\n      [#text(size: 8pt, weight: \"bold\")[Ano:]], #box(width: 100%, height: 4mm, stroke: (bottom: 0.5pt + black))[],\n      [#text(size: 8pt, weight: \"bold\")[Turma:]], #box(width: 100%, height: 4mm, stroke: (bottom: 0.5pt + black))[],\n      [#text(size: 8pt, weight: \"bold\")[Turno:]], #box(width: 100%, height: 4mm, stroke: (bottom: 0.5pt + black))[],\n      [#text(size: 8pt, weight: \"bold\")[Valor:]], #box(width: 100%, height: 4mm, stroke: (bottom: 0.5pt + black))[],\n      [#text(size: 8pt, weight: \"bold\")[Nota:]], #box(width: 100%, height: 4mm, stroke: (bottom: 0.5pt + black))[],\n    )\n"
+
+    // Line 5: Aluno
+    fields.push_str("Aluno(a): #box(width: 1fr, line(length: 100%, stroke: 0.5pt))\n\n");
+
+    // Line 6: Ano | Turma | Turno
+    fields.push_str(
+        "#grid(columns: (1fr, 1fr, 1fr), gutter: 3mm,\n  \
+         [Ano: #box(width: 1fr, line(length: 100%, stroke: 0.5pt))],\n  \
+         [Turma: #box(width: 1fr, line(length: 100%, stroke: 0.5pt))],\n  \
+         [Turno: #box(width: 1fr, line(length: 100%, stroke: 0.5pt))]\n)\n"
     );
-    src.push_str("  ]\n)\n");
 
-    // ── Decorative bottom band ───────────────────────────────────────────────
-    src.push_str(&format!(
-        "#v(1mm)\n#rect(width: 100%, height: 1.5mm, fill: rgb(\"{}\"), stroke: none)\n#v(3mm)\n\n",
-        cor_primaria
-    ));
+    // Line 7: Valor | Nota
+    fields.push_str(
+        "#grid(columns: (1fr, 1fr), gutter: 3mm,\n  \
+         [Valor: #box(width: 1fr, line(length: 100%, stroke: 0.5pt))],\n  \
+         [Nota: #box(width: 1fr, line(length: 100%, stroke: 0.5pt))]\n)\n"
+    );
 
-    // ── Title & description ──────────────────────────────────────────────────
+    // Wrap in bordered block with optional logo
+    if has_logo {
+        src.push_str(&format!(
+            "#block(width: 100%, stroke: 0.5pt + luma(180), inset: 6pt, radius: 0pt)[\n\
+             #grid(columns: (1fr, 9fr), gutter: 12pt,\n  \
+             align(horizon + center)[#image(\"logo_escola.{}\", width: 100%)],\n  \
+             [\n{}]\n)\n]\n",
+            logo_ext, fields
+        ));
+    } else {
+        src.push_str(&format!(
+            "#block(width: 100%, stroke: 0.5pt + luma(180), inset: 6pt, radius: 0pt)[\n{}\n]\n",
+            fields
+        ));
+    }
+
+    src.push_str("#v(4mm)\n");
+
+    // ── Title ────────────────────────────────────────────────────────────────
     if !titulo.is_empty() {
-        src.push_str(&format!("#align(center)[#text(size: 15pt, weight: \"bold\")[{}]]\n\n", escape_typst(titulo)));
+        src.push_str(&format!("#align(center)[#text(size: 12pt, weight: \"bold\")[{}]]\n", escape_typst(titulo)));
     }
     if !descricao.is_empty() {
         let (desc_typst, desc_imgs) = enunciado_to_typst_with_images(descricao, &mut image_counter);
         all_images.extend(desc_imgs);
-        src.push_str("#v(1mm)\n#align(center)[#emph[\n");
+        src.push_str("#align(center)[#emph[\n");
         src.push_str(&desc_typst);
-        src.push_str("]]\n\n");
+        src.push_str("]]\n");
     }
-    src.push_str("#line(length: 100%)\n\n");
+    src.push_str("#v(3mm)\n");
 
     // ── Questions ────────────────────────────────────────────────────────────
     let mut questao_num = 0usize;
@@ -863,6 +899,7 @@ fn build_typst_source(
             src.push_str(&enunciado_typst);
             src.push_str("]\n");
         }
+        src.push_str("#v(2mm)\n");
 
         let opcoes_arr = q.opcoes.as_array().map(|v| v.as_slice()).unwrap_or(&[]);
         match q.tipo.as_str() {
@@ -917,14 +954,27 @@ fn build_typst_source(
                 }
                 src.push_str("]\n");
             }
-            _ => {
-                // dissertativa — blank spacing lines (no underlines, just vertical space)
-                src.push_str("#pad(left: 5mm)[\n");
-                for _ in 0..q.linhas_resposta {
-                    src.push_str("#v(6mm)\n");
+            "letras" => {
+                src.push_str("#pad(left: 8mm)[\n");
+                for (j, o) in opcoes_arr.iter().enumerate() {
+                    let letra = (b'A' + j as u8) as char;
+                    if let Some(texto) = o.get("texto").and_then(|t| t.as_str()) {
+                        src.push_str(&format!("*{})*  {}\n\n", letra, escape_typst(texto)));
+                    }
+                    let linhas_sub = o.get("linhas").and_then(|v| v.as_i64()).unwrap_or(1);
+                    for _ in 0..linhas_sub {
+                        src.push_str("#line(length: 100%, stroke: 0.5pt + black)\n#v(5mm)\n");
+                    }
                 }
                 src.push_str("]\n");
             }
+            _ => {}
+        }
+        for _ in 0..q.linhas_resposta {
+            src.push_str("#line(length: 100%, stroke: 0.5pt + black)\n#v(5mm)\n");
+        }
+        for _ in 0..q.espaco_rascunho {
+            src.push_str("#line(length: 100%, stroke: 0.3pt + gray)\n#v(4mm)\n");
         }
         src.push_str("\n");
     }
@@ -938,17 +988,17 @@ fn build_typst_source(
 pub fn export_prova_pdf(id: i64, path: String) -> Result<(), String> {
     let conn = get_conn().map_err(|e| e.to_string())?;
 
-    let (titulo, descricao, nome_escola, cidade, logo_path, tema,
+    let (titulo, descricao, nome_escola, cidade, estado, logo_path, tema,
          moldura_estilo, margem_folha, margem_moldura, margem_conteudo,
-         fonte, tamanho_fonte, professor):
-        (String, String, String, String, String, String, String, f64, f64, f64, String, i64, String) = conn.query_row(
+         fonte, tamanho_fonte, professor, diretor):
+        (String, String, String, String, String, String, String, String, f64, f64, f64, String, i64, String, String) = conn.query_row(
         "SELECT p.titulo, p.descricao,
-                COALESCE(c.nome_escola,''), COALESCE(c.cidade,''),
+                COALESCE(c.nome_escola,''), COALESCE(c.cidade,''), COALESCE(c.estado,''),
                 COALESCE(c.logo_path,''), COALESCE(c.tema,'light'),
                 COALESCE(c.moldura_estilo,'none'), COALESCE(c.margem_folha,15.0),
                 COALESCE(c.margem_moldura,5.0), COALESCE(c.margem_conteudo,5.0),
                 COALESCE(c.fonte,'New Computer Modern'), COALESCE(c.tamanho_fonte,11),
-                COALESCE(prof.nome,'')
+                COALESCE(prof.nome,''), COALESCE(c.diretor,'')
          FROM provas p
          LEFT JOIN configuracoes c ON c.id=1
          LEFT JOIN materias m ON m.id=p.materia_id
@@ -957,12 +1007,13 @@ pub fn export_prova_pdf(id: i64, path: String) -> Result<(), String> {
         params![id],
         |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?,
                 r.get(5)?, r.get(6)?, r.get(7)?, r.get(8)?, r.get(9)?,
-                r.get(10)?, r.get(11)?, r.get(12)?)),
+                r.get(10)?, r.get(11)?, r.get(12)?, r.get(13)?, r.get(14)?)),
     ).map_err(|e| e.to_string())?;
     let cor_primaria = tema_to_primary_color(&tema).to_string();
 
     let mut stmt = conn.prepare(
-        "SELECT id, prova_id, enunciado, tipo, opcoes, ordem, valor, linhas_resposta \
+        "SELECT id, prova_id, enunciado, tipo, opcoes, ordem, valor, linhas_resposta, \
+         COALESCE(resposta,''), COALESCE(espaco_rascunho,0) \
          FROM questoes WHERE prova_id=?1 ORDER BY ordem"
     ).map_err(|e| e.to_string())?;
     let questoes: Vec<Questao> = stmt.query_map(params![id], |r| {
@@ -972,13 +1023,14 @@ pub fn export_prova_pdf(id: i64, path: String) -> Result<(), String> {
             tipo: r.get(3)?,
             opcoes: serde_json::from_str(&opcoes_str).unwrap_or(serde_json::json!([])),
             ordem: r.get(5)?, valor: r.get(6)?, linhas_resposta: r.get(7)?,
+            resposta: r.get(8)?, espaco_rascunho: r.get(9)?,
         })
     }).map_err(|e| e.to_string())?
     .collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())?;
 
     let (markup, images) = build_typst_source(
         &titulo, &descricao,
-        &nome_escola, &cidade, &professor,
+        &nome_escola, &cidade, &estado, &professor, &diretor,
         &logo_path, &cor_primaria,
         &questoes,
         &moldura_estilo, margem_folha, margem_moldura, margem_conteudo,
@@ -1002,8 +1054,10 @@ pub fn export_prova_pdf(id: i64, path: String) -> Result<(), String> {
     fs::write(&path, pdf_bytes).map_err(|e| e.to_string())
 }
 
-fn build_gabarito_source(titulo: &str, nome_escola: &str, questoes: &[Questao]) -> String {
+fn build_gabarito_source(titulo: &str, nome_escola: &str, questoes: &[Questao]) -> (String, HashMap<String, Bytes>) {
     let mut src = String::new();
+    let mut all_images: HashMap<String, Bytes> = HashMap::new();
+    let mut image_counter = 0u32;
     src.push_str("#set page(paper: \"a4\", margin: 2cm, numbering: \"1\")\n");
     src.push_str("#set text(font: \"New Computer Modern\", size: 11pt)\n");
     src.push_str("#set par(leading: 0.65em)\n\n");
@@ -1013,54 +1067,109 @@ fn build_gabarito_source(titulo: &str, nome_escola: &str, questoes: &[Questao]) 
     src.push_str("#align(center)[#text(size: 15pt, weight: \"bold\")[GABARITO]]\n");
     src.push_str(&format!("#align(center)[#text(size: 13pt)[{}]]\n", escape_typst(titulo)));
     src.push_str("\n#line(length: 100%)\n\n");
-    for (i, q) in questoes.iter().enumerate() {
+    let mut questao_num = 0usize;
+    for q in questoes.iter() {
+        if q.tipo == "texto" { continue; }
+        questao_num += 1;
         let valor_fmt = format!("{:.1}", q.valor);
-        src.push_str(&format!("#text(weight: \"bold\")[Questão {} ({} pt)]\n\n", i + 1, valor_fmt));
+        src.push_str(&format!("#text(weight: \"bold\")[Questão {} ({} pt)]\n", questao_num, valor_fmt));
+        let (enunciado_typst, enunciado_images) = enunciado_to_typst_with_images(&q.enunciado, &mut image_counter);
+        all_images.extend(enunciado_images);
+        if !enunciado_typst.trim().is_empty() {
+            src.push_str("#pad(left: 5mm)[\n");
+            src.push_str(&enunciado_typst);
+            src.push_str("]\n");
+        }
         let opcoes_arr = q.opcoes.as_array().map(|v| v.as_slice()).unwrap_or(&[]);
         match q.tipo.as_str() {
             "multipla_escolha" => {
-                let idx = opcoes_arr.iter().position(|o| {
-                    o.get("correta").and_then(|v| v.as_bool()).unwrap_or(false)
-                });
-                if let Some(idx) = idx {
-                    let letra = (b'a' + idx as u8) as char;
-                    src.push_str(&format!("#pad(left: 8mm)[Resposta: #strong[{}]]\n\n", letra));
-                } else {
-                    src.push_str("#pad(left: 8mm)[Resposta: —]\n\n");
+                src.push_str("#pad(left: 8mm)[\n");
+                for (j, o) in opcoes_arr.iter().enumerate() {
+                    if let Some(texto) = o.get("texto").and_then(|t| t.as_str()) {
+                        let letra = (b'a' + j as u8) as char;
+                        let correto = o.get("correta").and_then(|v| v.as_bool()).unwrap_or(false);
+                        if correto {
+                            src.push_str(&format!("#strong[{}) {} #text(fill: rgb(\"#1a7f37\"))[(CORRETA)]]\n\n", letra, escape_typst(texto)));
+                        } else {
+                            src.push_str(&format!("{}) {}\n\n", letra, escape_typst(texto)));
+                        }
+                    }
                 }
+                src.push_str("]\n");
             }
             "verdadeiro_falso" => {
                 src.push_str("#pad(left: 8mm)[\n");
                 for (j, o) in opcoes_arr.iter().enumerate() {
-                    let letra = (b'a' + j as u8) as char;
-                    let vf = if o.get("correta").and_then(|v| v.as_bool()).unwrap_or(false) { "V" } else { "F" };
-                    src.push_str(&format!("{}) #strong[{}]\n\n", letra, vf));
+                    if let Some(texto) = o.get("texto").and_then(|t| t.as_str()) {
+                        let letra = (b'a' + j as u8) as char;
+                        let correta = o.get("correta").and_then(|v| v.as_bool()).unwrap_or(false);
+                        let vf = if correta { "V" } else { "F" };
+                        src.push_str(&format!("{}) #strong[{}] #h(3mm) {}\n\n", letra, vf, escape_typst(texto)));
+                    }
                 }
-                src.push_str("]\n\n");
+                src.push_str("]\n");
+            }
+            "completar_lacunas" => {
+                let palavras: Vec<&str> = opcoes_arr.iter()
+                    .filter_map(|o| o.get("texto").and_then(|t| t.as_str()))
+                    .collect();
+                if !palavras.is_empty() {
+                    let joined = palavras.iter().map(|p| escape_typst(p)).collect::<Vec<_>>().join(" | ");
+                    src.push_str(&format!("#pad(left: 8mm)[Banco de palavras: {}]\n", joined));
+                }
+                if !q.resposta.is_empty() {
+                    src.push_str(&format!("#pad(left: 8mm)[#strong[Resposta: {}]]\n", escape_typst(&q.resposta)));
+                }
             }
             "associacao" => {
                 src.push_str("#pad(left: 8mm)[\n");
-                for j in 0..opcoes_arr.len() {
+                for (j, o) in opcoes_arr.iter().enumerate() {
+                    let a = o.get("texto").and_then(|t| t.as_str()).unwrap_or("");
+                    let b_text = o.get("par").and_then(|t| t.as_str()).unwrap_or("");
                     let letra = (b'A' + j as u8) as char;
-                    src.push_str(&format!("{} #sym.arrow.r #strong[{}]\n\n", j + 1, letra));
+                    src.push_str(&format!(
+                        "{}) {} #sym.arrow.r #strong[{}) {}]\n\n",
+                        j + 1, escape_typst(a), letra, escape_typst(b_text)
+                    ));
                 }
-                src.push_str("]\n\n");
+                src.push_str("]\n");
             }
             "ordenar" => {
                 src.push_str("#pad(left: 8mm)[\n");
                 for (j, o) in opcoes_arr.iter().enumerate() {
                     if let Some(texto) = o.get("texto").and_then(|t| t.as_str()) {
-                        src.push_str(&format!("{}) {}\n\n", j + 1, escape_typst(texto)));
+                        src.push_str(&format!("#strong[({})] {}\n\n", j + 1, escape_typst(texto)));
                     }
                 }
-                src.push_str("]\n\n");
+                src.push_str("]\n");
+            }
+            "letras" => {
+                src.push_str("#pad(left: 8mm)[\n");
+                for (j, o) in opcoes_arr.iter().enumerate() {
+                    let letra = (b'A' + j as u8) as char;
+                    if let Some(texto) = o.get("texto").and_then(|t| t.as_str()) {
+                        src.push_str(&format!("*{})* {}\n\n", letra, escape_typst(texto)));
+                    }
+                    let resp = o.get("par").and_then(|v| v.as_str()).unwrap_or("");
+                    if !resp.is_empty() {
+                        src.push_str(&format!("#pad(left: 6mm)[#strong[Resposta: {}]]\n\n", escape_typst(resp)));
+                    } else {
+                        src.push_str("#pad(left: 6mm)[#emph[Sem resposta cadastrada]]\n\n");
+                    }
+                }
+                src.push_str("]\n");
             }
             _ => {
-                src.push_str("#pad(left: 8mm)[Gabarito: #line(length: 80%)]\n\n");
+                if !q.resposta.is_empty() {
+                    src.push_str(&format!("#pad(left: 8mm)[#strong[Resposta esperada: {}]]\n", escape_typst(&q.resposta)));
+                } else {
+                    src.push_str("#pad(left: 8mm)[#emph[Sem resposta cadastrada]]\n");
+                }
             }
         }
+        src.push_str("\n");
     }
-    src
+    (src, all_images)
 }
 
 #[tauri::command]
@@ -1073,7 +1182,8 @@ pub fn export_gabarito_pdf(id: i64, path: String) -> Result<(), String> {
         |r| Ok((r.get(0)?, r.get(1)?)),
     ).map_err(|e| e.to_string())?;
     let mut stmt = conn.prepare(
-        "SELECT id, prova_id, enunciado, tipo, opcoes, ordem, valor, linhas_resposta \
+        "SELECT id, prova_id, enunciado, tipo, opcoes, ordem, valor, linhas_resposta, \
+         COALESCE(resposta,''), COALESCE(espaco_rascunho,0) \
          FROM questoes WHERE prova_id=?1 ORDER BY ordem"
     ).map_err(|e| e.to_string())?;
     let questoes: Vec<Questao> = stmt.query_map(params![id], |r| {
@@ -1083,11 +1193,12 @@ pub fn export_gabarito_pdf(id: i64, path: String) -> Result<(), String> {
             tipo: r.get(3)?,
             opcoes: serde_json::from_str(&opcoes_str).unwrap_or(serde_json::json!([])),
             ordem: r.get(5)?, valor: r.get(6)?, linhas_resposta: r.get(7)?,
+            resposta: r.get(8)?, espaco_rascunho: r.get(9)?,
         })
     }).map_err(|e| e.to_string())?
     .collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())?;
-    let markup = build_gabarito_source(&titulo, &nome_escola, &questoes);
-    let world = ExamWorld::new(markup);
+    let (markup, images) = build_gabarito_source(&titulo, &nome_escola, &questoes);
+    let world = ExamWorld::new_with_files(markup, images);
     let result = typst::compile::<PagedDocument>(&world);
     let document = result.output.map_err(|errs| {
         errs.iter().map(|e| e.message.to_string()).collect::<Vec<_>>().join("; ")
@@ -1246,9 +1357,11 @@ fn build_atividade_typst_source(
     descricao: &str,
     nome_escola: &str,
     cidade: &str,
+    estado: &str,
     professor: &str,
+    diretor: &str,
     logo_path: &str,
-    cor_primaria: &str,
+    _cor_primaria: &str,
     vale_nota: bool,
     valor_total: f64,
     questoes: &[crate::models::Questao],
@@ -1265,7 +1378,7 @@ fn build_atividade_typst_source(
 
     let total_margin = margem_folha + margem_moldura + margem_conteudo;
     let bg_expr = if moldura_estilo != "none" {
-        format!(", background: {}", generate_frame_background(moldura_estilo, margem_folha))
+        format!(", background: {}", generate_frame_background(moldura_estilo, margem_folha, margem_moldura))
     } else {
         String::new()
     };
@@ -1278,11 +1391,6 @@ fn build_atividade_typst_source(
     src.push_str("#set par(justify: false, leading: 0.65em)\n");
     src.push_str("#set math.equation(numbering: none)\n\n");
 
-    src.push_str(&format!(
-        "#rect(width: 100%, height: 2.5mm, fill: rgb(\"{}\"), stroke: none)\n#v(1mm)\n",
-        cor_primaria
-    ));
-
     let logo_ext = std::path::Path::new(logo_path)
         .extension().and_then(|e| e.to_str()).unwrap_or("png").to_string();
     let has_logo = if !logo_path.is_empty() {
@@ -1292,72 +1400,109 @@ fn build_atividade_typst_source(
         } else { false }
     } else { false };
 
-    let logo_col_content = if has_logo {
-        format!("align(center + horizon)[#image(\"logo_escola.{}\", fit: \"contain\", height: 22mm)]", logo_ext)
+    let cidade_estado = if !estado.is_empty() && !cidade.is_empty() {
+        format!("{} — {}", escape_typst(cidade), escape_typst(estado))
+    } else if !estado.is_empty() {
+        escape_typst(estado).to_string()
     } else {
-        "align(center + horizon)[]".to_string()
-    };
-
-    let cidade_data = if !cidade.is_empty() {
-        format!("{}, ___/___", escape_typst(cidade))
-    } else {
-        "___/___".to_string()
+        escape_typst(cidade).to_string()
     };
     let prof_fill = escape_typst(professor);
+    let dir_fill = escape_typst(diretor);
 
-    src.push_str(&format!(
-        "#grid(\n  columns: (2fr, 8fr),\n  column-gutter: 4mm,\n  {},\n  block(width: 100%)[\n",
-        logo_col_content
-    ));
+    // ── Header (unified bordered block) ────────────────────────────────────
+    let mut fields = String::new();
+
+    // Line 1: School name
     if !nome_escola.is_empty() {
-        src.push_str(&format!(
-            "    #align(center)[#text(weight: \"bold\", size: 13pt)[{}]]\n",
-            escape_typst(nome_escola)
+        fields.push_str(&format!("{}\n\n", escape_typst(&nome_escola.to_uppercase())));
+    }
+
+    // Line 2: Diretor
+    if !diretor.is_empty() {
+        fields.push_str(&format!("Diretor(a): {}\n\n", dir_fill));
+    } else {
+        fields.push_str("Diretor(a): #box(width: 1fr, line(length: 100%, stroke: 0.5pt))\n\n");
+    }
+
+    // Line 3: Cidade, Estado, Data
+    {
+        let loc_part = if !cidade_estado.is_empty() {
+            format!("{}, ", cidade_estado)
+        } else { String::new() };
+        fields.push_str(&format!(
+            "{}Data: #box(width: 1fr, line(length: 100%, stroke: 0.5pt))\n\n",
+            loc_part
         ));
     }
-    if !cidade.is_empty() {
-        src.push_str(&format!(
-            "    #align(center)[#text(size: 9pt)[{}]]\n",
-            escape_typst(cidade)
-        ));
+
+    // Line 4: Professor
+    if !professor.is_empty() {
+        fields.push_str(&format!("Professor(a): {}\n\n", prof_fill));
+    } else {
+        fields.push_str("Professor(a): #box(width: 1fr, line(length: 100%, stroke: 0.5pt))\n\n");
     }
-    src.push_str("    #v(1.5mm)\n");
-    src.push_str(&format!(
-        "    #grid(\n      columns: (2.2cm, 1fr, 3.2cm, 1fr),\n      column-gutter: 1.5mm, row-gutter: 1.5mm,\n      [#text(size: 8pt, weight: \"bold\")[Data:]], [#text(size: 8pt)[{}]],\n      [#text(size: 8pt, weight: \"bold\")[Professor(a):]],[#box(width: 100%, height: 4mm, stroke: (bottom: 0.5pt + black))[{}]],\n    )\n",
-        cidade_data, prof_fill
-    ));
-    src.push_str("    #v(1mm)\n");
+
+    // Line 5: Aluno
+    fields.push_str("Aluno(a): #box(width: 1fr, line(length: 100%, stroke: 0.5pt))\n\n");
+
+    // Line 6: Ano | Turma | Turno
+    fields.push_str(
+        "#grid(columns: (1fr, 1fr, 1fr), gutter: 3mm,\n  \
+         [Ano: #box(width: 1fr, line(length: 100%, stroke: 0.5pt))],\n  \
+         [Turma: #box(width: 1fr, line(length: 100%, stroke: 0.5pt))],\n  \
+         [Turno: #box(width: 1fr, line(length: 100%, stroke: 0.5pt))]\n)\n"
+    );
+
+    // Line 7: Valor | Nota
     if vale_nota {
-        src.push_str(&format!(
-            "    #grid(\n      columns: (1.5cm, 1fr, 1.5cm, 1fr, 1.5cm, 1fr, 1.5cm, 1fr, 1.5cm, 1fr),\n      column-gutter: 1mm, row-gutter: 1mm,\n      [#text(size: 8pt, weight: \"bold\")[Ano:]], #box(width: 100%, height: 4mm, stroke: (bottom: 0.5pt + black))[],\n      [#text(size: 8pt, weight: \"bold\")[Turma:]], #box(width: 100%, height: 4mm, stroke: (bottom: 0.5pt + black))[],\n      [#text(size: 8pt, weight: \"bold\")[Turno:]], #box(width: 100%, height: 4mm, stroke: (bottom: 0.5pt + black))[],\n      [#text(size: 8pt, weight: \"bold\")[Valor:]], #box(width: 100%, height: 4mm, stroke: (bottom: 0.5pt + black))[#text(size: 8pt)[{:.1}]],\n      [#text(size: 8pt, weight: \"bold\")[Nota:]], #box(width: 100%, height: 4mm, stroke: (bottom: 0.5pt + black))[],\n    )\n",
+        fields.push_str(&format!(
+            "#grid(columns: (1fr, 1fr), gutter: 3mm,\n  \
+             [Valor: #strong[{:.1}]],\n  \
+             [Nota: #box(width: 1fr, line(length: 100%, stroke: 0.5pt))]\n)\n",
             valor_total
         ));
     } else {
-        src.push_str(
-            "    #grid(\n      columns: (1.5cm, 1fr, 1.5cm, 1fr, 1.5cm, 1fr),\n      column-gutter: 1mm, row-gutter: 1mm,\n      [#text(size: 8pt, weight: \"bold\")[Ano:]], #box(width: 100%, height: 4mm, stroke: (bottom: 0.5pt + black))[],\n      [#text(size: 8pt, weight: \"bold\")[Turma:]], #box(width: 100%, height: 4mm, stroke: (bottom: 0.5pt + black))[],\n      [#text(size: 8pt, weight: \"bold\")[Turno:]], #box(width: 100%, height: 4mm, stroke: (bottom: 0.5pt + black))[],\n    )\n"
+        fields.push_str(
+            "#grid(columns: (1fr, 1fr), gutter: 3mm,\n  \
+             [Valor: #box(width: 1fr, line(length: 100%, stroke: 0.5pt))],\n  \
+             [Nota: #box(width: 1fr, line(length: 100%, stroke: 0.5pt))]\n)\n"
         );
     }
-    src.push_str("  ]\n)\n");
 
-    src.push_str(&format!(
-        "#v(1mm)\n#rect(width: 100%, height: 1.5mm, fill: rgb(\"{}\"), stroke: none)\n#v(3mm)\n\n",
-        cor_primaria
-    ));
+    // Wrap in bordered block with optional logo
+    if has_logo {
+        src.push_str(&format!(
+            "#block(width: 100%, stroke: 0.5pt + luma(180), inset: 6pt, radius: 0pt)[\n\
+             #grid(columns: (2fr, 8fr), gutter: 6pt,\n  \
+             align(horizon + center)[#image(\"logo_escola.{}\", width: 100%)],\n  \
+             [\n{}]\n)\n]\n",
+            logo_ext, fields
+        ));
+    } else {
+        src.push_str(&format!(
+            "#block(width: 100%, stroke: 0.5pt + luma(180), inset: 6pt, radius: 0pt)[\n{}\n]\n",
+            fields
+        ));
+    }
 
+    src.push_str("#v(4mm)\n");
+
+    // ── Title ────────────────────────────────────────────────────────────────
     if !nome_materia.is_empty() {
         src.push_str(&format!("#align(center)[#text(size: 10pt)[{}]]\n", escape_typst(nome_materia)));
     }
     if !titulo.is_empty() {
-        src.push_str(&format!("#align(center)[#text(size: 15pt, weight: \"bold\")[{}]]\n\n", escape_typst(titulo)));
+        src.push_str(&format!("#align(center)[#text(size: 12pt, weight: \"bold\")[{}]]\n", escape_typst(titulo)));
     }
     if !descricao.is_empty() {
         let (desc_typst, desc_imgs) = enunciado_to_typst_with_images(descricao, &mut image_counter);
         all_images.extend(desc_imgs);
-        src.push_str("#v(1mm)\n#align(center)[#emph[\n");
+        src.push_str("#align(center)[#emph[\n");
         src.push_str(&desc_typst);
-        src.push_str("]]\n\n");
+        src.push_str("]]\n");
     }
-    src.push_str("#line(length: 100%)\n\n");
+    src.push_str("#v(3mm)\n\n");
 
     let mut questao_num = 0usize;
     for q in questoes.iter() {
@@ -1380,6 +1525,7 @@ fn build_atividade_typst_source(
             src.push_str(&enunciado_typst);
             src.push_str("]\n");
         }
+        src.push_str("#v(2mm)\n");
         let opcoes_arr = q.opcoes.as_array().map(|v| v.as_slice()).unwrap_or(&[]);
         match q.tipo.as_str() {
             "multipla_escolha" => {
@@ -1433,13 +1579,27 @@ fn build_atividade_typst_source(
                 }
                 src.push_str("]\n");
             }
-            _ => {
-                src.push_str("#pad(left: 5mm)[\n");
-                for _ in 0..q.linhas_resposta {
-                    src.push_str("#v(6mm)\n");
+            "letras" => {
+                src.push_str("#pad(left: 8mm)[\n");
+                for (j, o) in opcoes_arr.iter().enumerate() {
+                    let letra = (b'A' + j as u8) as char;
+                    if let Some(texto) = o.get("texto").and_then(|t| t.as_str()) {
+                        src.push_str(&format!("*{})*  {}\n\n", letra, escape_typst(texto)));
+                    }
+                    let linhas_sub = o.get("linhas").and_then(|v| v.as_i64()).unwrap_or(1);
+                    for _ in 0..linhas_sub {
+                        src.push_str("#line(length: 100%, stroke: 0.5pt + black)\n#v(5mm)\n");
+                    }
                 }
                 src.push_str("]\n");
             }
+            _ => {}
+        }
+        for _ in 0..q.linhas_resposta {
+            src.push_str("#line(length: 100%, stroke: 0.5pt + black)\n#v(5mm)\n");
+        }
+        for _ in 0..q.espaco_rascunho {
+            src.push_str("#line(length: 100%, stroke: 0pt + gray)\n#v(5mm)\n");
         }
         src.push_str("\n");
     }
@@ -1451,18 +1611,18 @@ fn build_atividade_typst_source(
 pub fn export_atividade_pdf(id: i64, path: String) -> Result<(), String> {
     let conn = get_conn().map_err(|e| e.to_string())?;
 
-    let (titulo, descricao, nome_materia, nome_escola, cidade, logo_path, tema,
+    let (titulo, descricao, nome_materia, nome_escola, cidade, estado, logo_path, tema,
          moldura_estilo, margem_folha, margem_moldura, margem_conteudo,
-         fonte, tamanho_fonte, professor, vale_nota, valor_total):
-        (String, String, String, String, String, String, String, String, f64, f64, f64, String, i64, String, i64, f64) = conn.query_row(
+         fonte, tamanho_fonte, professor, vale_nota, valor_total, diretor):
+        (String, String, String, String, String, String, String, String, String, f64, f64, f64, String, i64, String, i64, f64, String) = conn.query_row(
         "SELECT a.titulo, a.descricao,
                 COALESCE(m.nome,''), COALESCE(c.nome_escola,''), COALESCE(c.cidade,''),
-                COALESCE(c.logo_path,''), COALESCE(c.tema,'light'),
+                COALESCE(c.estado,''), COALESCE(c.logo_path,''), COALESCE(c.tema,'light'),
                 COALESCE(c.moldura_estilo,'none'), COALESCE(c.margem_folha,15.0),
                 COALESCE(c.margem_moldura,5.0), COALESCE(c.margem_conteudo,5.0),
                 COALESCE(c.fonte,'New Computer Modern'), COALESCE(c.tamanho_fonte,11),
                 COALESCE(prof.nome,''),
-                a.vale_nota, a.valor_total
+                a.vale_nota, a.valor_total, COALESCE(c.diretor,'')
          FROM atividades a
          LEFT JOIN configuracoes c ON c.id=1
          LEFT JOIN materias m ON m.id=a.materia_id
@@ -1471,12 +1631,13 @@ pub fn export_atividade_pdf(id: i64, path: String) -> Result<(), String> {
         params![id],
         |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?,
                 r.get(5)?, r.get(6)?, r.get(7)?, r.get(8)?, r.get(9)?,
-                r.get(10)?, r.get(11)?, r.get(12)?, r.get(13)?, r.get(14)?, r.get(15)?)),
+                r.get(10)?, r.get(11)?, r.get(12)?, r.get(13)?, r.get(14)?, r.get(15)?, r.get(16)?, r.get(17)?)),
     ).map_err(|e| e.to_string())?;
     let cor_primaria = tema_to_primary_color(&tema).to_string();
 
     let mut stmt = conn.prepare(
-        "SELECT id, atividade_id, enunciado, tipo, opcoes, ordem, valor, linhas_resposta \
+        "SELECT id, atividade_id, enunciado, tipo, opcoes, ordem, valor, linhas_resposta, \
+         COALESCE(resposta,''), COALESCE(espaco_rascunho,0) \
          FROM questoes_atividade WHERE atividade_id=?1 ORDER BY ordem"
     ).map_err(|e| e.to_string())?;
     let questoes: Vec<crate::models::Questao> = stmt.query_map(params![id], |r| {
@@ -1486,13 +1647,14 @@ pub fn export_atividade_pdf(id: i64, path: String) -> Result<(), String> {
             tipo: r.get(3)?,
             opcoes: serde_json::from_str(&opcoes_str).unwrap_or(serde_json::json!([])),
             ordem: r.get(5)?, valor: r.get(6)?, linhas_resposta: r.get(7)?,
+            resposta: r.get(8)?, espaco_rascunho: r.get(9)?,
         })
     }).map_err(|e| e.to_string())?
     .collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())?;
 
     let (markup, images) = build_atividade_typst_source(
         &titulo, &nome_materia, &descricao,
-        &nome_escola, &cidade, &professor,
+        &nome_escola, &cidade, &estado, &professor, &diretor,
         &logo_path, &cor_primaria,
         vale_nota != 0, valor_total,
         &questoes,
@@ -1508,6 +1670,42 @@ pub fn export_atividade_pdf(id: i64, path: String) -> Result<(), String> {
         let msg = errs.iter().map(|e| e.message.to_string()).collect::<Vec<_>>().join("; ");
         log::error!("[typst error] {}", msg);
         msg
+    })?;
+    let pdf_bytes = typst_pdf::pdf(&document, &PdfOptions::default())
+        .map_err(|errs| errs.iter().map(|e| e.message.to_string()).collect::<Vec<_>>().join("; "))?;
+    fs::write(&path, pdf_bytes).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn export_gabarito_atividade_pdf(id: i64, path: String) -> Result<(), String> {
+    let conn = get_conn().map_err(|e| e.to_string())?;
+    let (titulo, nome_escola): (String, String) = conn.query_row(
+        "SELECT a.titulo, COALESCE(c.nome_escola,'') \
+         FROM atividades a LEFT JOIN configuracoes c ON c.id=1 WHERE a.id=?1",
+        params![id],
+        |r| Ok((r.get(0)?, r.get(1)?)),
+    ).map_err(|e| e.to_string())?;
+    let mut stmt = conn.prepare(
+        "SELECT id, atividade_id, enunciado, tipo, opcoes, ordem, valor, linhas_resposta, \
+         COALESCE(resposta,''), COALESCE(espaco_rascunho,0) \
+         FROM questoes_atividade WHERE atividade_id=?1 ORDER BY ordem"
+    ).map_err(|e| e.to_string())?;
+    let questoes: Vec<crate::models::Questao> = stmt.query_map(params![id], |r| {
+        let opcoes_str: String = r.get(4)?;
+        Ok(crate::models::Questao {
+            id: r.get(0)?, prova_id: r.get(1)?, enunciado: r.get(2)?,
+            tipo: r.get(3)?,
+            opcoes: serde_json::from_str(&opcoes_str).unwrap_or(serde_json::json!([])),
+            ordem: r.get(5)?, valor: r.get(6)?, linhas_resposta: r.get(7)?,
+            resposta: r.get(8)?, espaco_rascunho: r.get(9)?,
+        })
+    }).map_err(|e| e.to_string())?
+    .collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())?;
+    let (markup, images) = build_gabarito_source(&titulo, &nome_escola, &questoes);
+    let world = ExamWorld::new_with_files(markup, images);
+    let result = typst::compile::<PagedDocument>(&world);
+    let document = result.output.map_err(|errs| {
+        errs.iter().map(|e| e.message.to_string()).collect::<Vec<_>>().join("; ")
     })?;
     let pdf_bytes = typst_pdf::pdf(&document, &PdfOptions::default())
         .map_err(|errs| errs.iter().map(|e| e.message.to_string()).collect::<Vec<_>>().join("; "))?;
