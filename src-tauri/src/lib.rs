@@ -64,9 +64,12 @@ pub fn run() {
             list_notas, create_nota, update_nota, delete_nota,
             list_categoria_lancamentos, create_categoria_lancamento, update_categoria_lancamento, delete_categoria_lancamento,
             list_aulas, create_aula, create_aulas_recorrentes, update_aula, delete_aula, copy_semestre,
+            get_faltas_aula, save_faltas_aula, get_faltas_por_materia,
             export_prova_pdf, export_prova_word, export_gabarito_pdf, export_gabarito_word, export_boletim_pdf,
             export_atividade_pdf, export_gabarito_atividade_pdf, export_gabarito_atividade_word, export_atividade_word,
+            export_boletim_word,
             get_configuracoes, save_configuracoes, backup_database, restore_database, check_update,
+            backup_completo, restore_from_backup,
             get_dashboard_stats, list_proximas_provas, get_alertas, get_medias_por_materia,
         ])
         .run(tauri::generate_context!())

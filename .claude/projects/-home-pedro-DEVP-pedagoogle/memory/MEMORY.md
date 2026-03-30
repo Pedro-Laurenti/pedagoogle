@@ -1,0 +1,1 @@
+- [Pedagoogle project context](project_pedagoogle_context.md) — Architecture, modules, and features added 2026-03-30 (boletim, faltas, backup, updater fix)

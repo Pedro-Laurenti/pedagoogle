@@ -215,3 +215,16 @@ export interface MediaMateria {
   materia_nome: string;
   media: number;
 }
+
+export interface FaltaItem {
+  aluno_id: number;
+  aluno_nome: string;
+  faltou: boolean;
+}
+
+export interface FaltasPorMateria {
+  materia_id: number;
+  materia_nome: string;
+  bimestre: number;
+  faltas: number;
+}

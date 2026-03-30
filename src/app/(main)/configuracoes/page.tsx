@@ -72,6 +72,7 @@ export default function ConfiguracoesPage() {
   const [toast, setToast] = useState<ToastState | null>(null);
   const [novaVersao, setNovaVersao] = useState<string | null>(null);
   const [checkingUpdate, setCheckingUpdate] = useState(false);
+  const [backupPath, setBackupPath] = useState<string | null>(null);
 
   useEffect(() => {
     invokeCmd<Configuracoes>("get_configuracoes").then((c) => {
@@ -88,11 +89,13 @@ export default function ConfiguracoesPage() {
   async function checkUpdate() {
     setCheckingUpdate(true);
     try {
+      const bPath = await invokeCmd<string>("backup_completo");
+      setBackupPath(bPath);
       const tag = await invokeCmd<string | null>("check_update");
       if (tag) {
         setNovaVersao(tag);
       } else {
-        notify("O aplicativo já está atualizado.");
+        notify(`Aplicativo atualizado. Backup criado em: ${bPath}`);
       }
     } catch {
       notify("Não foi possível verificar atualizações.", "error");
@@ -506,6 +509,11 @@ export default function ConfiguracoesPage() {
         <p className="text-sm">
           Uma nova versão do Pedagoogle está disponível: <strong>{novaVersao}</strong>.
         </p>
+        {backupPath && (
+          <p className="text-sm mt-2 text-success">
+            Backup criado em: <code className="text-xs break-all">{backupPath}</code>
+          </p>
+        )}
         <p className="text-sm mt-2">
           Acesse{" "}
           <a

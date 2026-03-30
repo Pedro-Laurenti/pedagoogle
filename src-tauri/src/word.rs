@@ -1113,3 +1113,102 @@ pub fn export_gabarito_atividade_word(id: i64, path: String) -> Result<(), Strin
     doc.build().pack(file).map_err(|e| e.to_string())?;
     Ok(())
 }
+
+#[tauri::command]
+pub fn export_boletim_word(aluno_id: i64, ano_letivo: String, path: String) -> Result<(), String> {
+    let conn = crate::db::get_conn().map_err(|e| e.to_string())?;
+
+    let aluno_nome: String = conn.query_row("SELECT nome FROM alunos WHERE id=?1", params![aluno_id], |r| r.get(0)).map_err(|e| e.to_string())?;
+    let matricula: String = conn.query_row("SELECT COALESCE(matricula,'') FROM alunos WHERE id=?1", params![aluno_id], |r| r.get(0)).unwrap_or_default();
+    let (turma_nome, turno): (Option<String>, Option<String>) = conn.query_row(
+        "SELECT t.nome, t.turno FROM alunos a LEFT JOIN turmas t ON t.id=a.turma_id WHERE a.id=?1",
+        params![aluno_id], |r| Ok((r.get(0)?, r.get(1)?))
+    ).unwrap_or((None, None));
+    let (nome_escola, nota_minima): (String, f64) = conn.query_row(
+        "SELECT COALESCE(nome_escola,''), COALESCE(nota_minima,5.0) FROM configuracoes WHERE id=1",
+        [], |r| Ok((r.get(0)?, r.get(1)?))
+    ).unwrap_or_default();
+    let ano_exibir = if !ano_letivo.is_empty() { ano_letivo.clone() } else {
+        conn.query_row("SELECT COALESCE(ano_letivo,'') FROM configuracoes WHERE id=1", [], |r| r.get(0)).unwrap_or_default()
+    };
+
+    // Get materias
+    let mut materias_ids: Vec<(i64, String)> = {
+        let mut s = conn.prepare(
+            "SELECT DISTINCT m.id, m.nome FROM notas n JOIN provas p ON p.id=n.prova_id JOIN materias m ON m.id=p.materia_id WHERE n.aluno_id=?1 ORDER BY m.nome"
+        ).map_err(|e| e.to_string())?;
+        s.query_map(params![aluno_id], |r| Ok((r.get(0)?, r.get(1)?))).map_err(|e| e.to_string())?
+            .filter_map(|r| r.ok()).collect()
+    };
+    if let Some(turma_id) = conn.query_row("SELECT turma_id FROM alunos WHERE id=?1", params![aluno_id], |r| r.get::<_,Option<i64>>(0)).ok().flatten() {
+        let mut s = conn.prepare("SELECT m.id, m.nome FROM turma_materias tm JOIN materias m ON m.id=tm.materia_id WHERE tm.turma_id=?1 ORDER BY m.nome").map_err(|e| e.to_string())?;
+        let extra: Vec<(i64,String)> = s.query_map(params![turma_id], |r| Ok((r.get(0)?,r.get(1)?))).map_err(|e| e.to_string())?
+            .filter_map(|r| r.ok()).collect();
+        for e in extra { if !materias_ids.iter().any(|(id,_)| *id == e.0) { materias_ids.push(e); } }
+    }
+    materias_ids.sort_by(|a, b| a.1.cmp(&b.1));
+
+    let mut doc = Docx::new();
+
+    // Title
+    doc = doc.add_paragraph(Paragraph::new().add_run(Run::new().add_text(&nome_escola).bold().size(32)));
+    doc = doc.add_paragraph(Paragraph::new().align(AlignmentType::Center).add_run(Run::new().add_text("BOLETIM ESCOLAR").bold().size(36)));
+    doc = doc.add_paragraph(Paragraph::new().add_run(
+        Run::new().add_text(&format!("Aluno(a): {}  |  RA: {}  |  Turma: {}  |  Turno: {}  |  Ano letivo: {}",
+            aluno_nome, if matricula.is_empty() { "—".into() } else { matricula.clone() },
+            turma_nome.as_deref().unwrap_or("—"),
+            turno.as_deref().unwrap_or("—"),
+            ano_exibir
+        )).size(20)
+    ));
+    doc = doc.add_paragraph(Paragraph::new());
+
+    // Table header
+    let header_cells: Vec<TableCell> = vec![
+        "Disciplina", "1ºB - N", "1ºB - F", "2ºB - N", "2ºB - F",
+        "3ºB - N", "3ºB - F", "4ºB - N", "4ºB - F", "Média Final", "Faltas", "Situação"
+    ].iter().map(|h| {
+        TableCell::new().add_paragraph(Paragraph::new().add_run(Run::new().add_text(*h).bold().size(18)))
+    }).collect();
+    let mut rows = vec![TableRow::new(header_cells)];
+
+    // Data rows
+    for (mat_id, mat_nome) in &materias_ids {
+        let notas: Vec<Option<f64>> = (1i64..=4).map(|b| {
+            crate::typst_pdf::get_nota_bimestre(&conn, aluno_id, *mat_id, b, &ano_letivo)
+        }).collect();
+        let faltas: Vec<i64> = (1i64..=4).map(|b| {
+            conn.query_row(
+                "SELECT COUNT(*) FROM faltas f JOIN aulas a ON a.id=f.aula_id WHERE f.aluno_id=?1 AND a.materia_id=?2 AND a.bimestre=?3",
+                params![aluno_id, mat_id, b], |r| r.get::<_,i64>(0)
+            ).unwrap_or(0)
+        }).collect();
+        let falta_total: i64 = faltas.iter().sum();
+        let notas_v: Vec<f64> = notas.iter().filter_map(|n| *n).collect();
+        let media = if notas_v.is_empty() { None } else { Some(notas_v.iter().sum::<f64>() / notas_v.len() as f64) };
+        let situacao = match media {
+            Some(m) if m >= nota_minima => "Aprovado(a)",
+            Some(_) => "Em recuperação",
+            None => "—",
+        };
+        let nota_s = |n: &Option<f64>| match n { Some(v) => format!("{:.1}", v), None => "—".into() };
+        let cells: Vec<TableCell> = vec![
+            mat_nome.clone(),
+            nota_s(&notas[0]), faltas[0].to_string(),
+            nota_s(&notas[1]), faltas[1].to_string(),
+            nota_s(&notas[2]), faltas[2].to_string(),
+            nota_s(&notas[3]), faltas[3].to_string(),
+            match media { Some(m) => format!("{:.2}", m), None => "—".into() },
+            falta_total.to_string(),
+            situacao.to_string(),
+        ].iter().map(|t| TableCell::new().add_paragraph(Paragraph::new().add_run(Run::new().add_text(t.as_str()).size(18)))).collect();
+        rows.push(TableRow::new(cells));
+    }
+
+    doc = doc.add_table(Table::new(rows));
+    doc = doc.add_paragraph(Paragraph::new());
+    doc = doc.add_paragraph(Paragraph::new().add_run(Run::new().add_text("Siglas: N = Nota do bimestre | F = Faltas | — = Sem lançamento").size(16).italic()));
+
+    let file = std::fs::File::create(&path).map_err(|e| e.to_string())?;
+    doc.build().pack(file).map_err(|e| e.to_string())
+}

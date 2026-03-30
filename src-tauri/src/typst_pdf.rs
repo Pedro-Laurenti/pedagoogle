@@ -15,6 +15,7 @@ use typst::{Library, World};
 use typst_pdf::PdfOptions;
 use crate::db::get_conn;
 use crate::models::Questao;
+#[allow(unused_imports)]
 use crate::notas::get_nota_efetiva;
 use rusqlite::params;
 
@@ -1256,90 +1257,263 @@ ${}$"#,
 
 // ── Boletim PDF ──────────────────────────────────────────────────────────────
 
+pub(crate) fn get_nota_bimestre(conn: &rusqlite::Connection, aluno_id: i64, materia_id: i64, bimestre: i64, ano_letivo: &str) -> Option<f64> {
+    struct NRow { valor: f64, peso: f64, recuperacao: bool }
+    let filter_ano = if ano_letivo.is_empty() { None } else { Some(ano_letivo) };
+    let mut stmt = match conn.prepare(
+        "SELECT n.valor, p.valor_total, COALESCE(p.is_recuperacao,0)
+         FROM notas n JOIN provas p ON p.id = n.prova_id
+         WHERE n.aluno_id=?1 AND p.materia_id=?2 AND p.bimestre=?3
+           AND (?4 IS NULL OR p.ano_letivo=?4)"
+    ) { Ok(s) => s, Err(_) => return None };
+    let rows: Vec<NRow> = stmt.query_map(
+        rusqlite::params![aluno_id, materia_id, bimestre, filter_ano],
+        |r| Ok(NRow { valor: r.get(0)?, peso: r.get(1)?, recuperacao: r.get::<_,i64>(2)? != 0 })
+    ).ok()?.filter_map(|r| r.ok()).collect();
+    if rows.is_empty() { return None; }
+    let weighted = |ns: &[&NRow]| -> Option<f64> {
+        let pt: f64 = ns.iter().map(|n| n.peso).sum();
+        if pt == 0.0 { return None; }
+        Some(ns.iter().map(|n| n.valor * n.peso).sum::<f64>() / pt)
+    };
+    let regular: Vec<&NRow> = rows.iter().filter(|r| !r.recuperacao).collect();
+    let rec: Vec<&NRow> = rows.iter().filter(|r| r.recuperacao).collect();
+    match (weighted(&regular), weighted(&rec)) {
+        (Some(r), Some(rc)) => Some(r.max(rc)),
+        (Some(r), None) => Some(r),
+        (None, Some(rc)) => Some(rc),
+        _ => None,
+    }
+}
+
+fn get_faltas_bimestre_materia(conn: &rusqlite::Connection, aluno_id: i64, materia_id: i64, bimestre: i64) -> i64 {
+    conn.query_row(
+        "SELECT COUNT(*) FROM faltas f JOIN aulas a ON a.id=f.aula_id
+         WHERE f.aluno_id=?1 AND a.materia_id=?2 AND a.bimestre=?3",
+        rusqlite::params![aluno_id, materia_id, bimestre],
+        |r| r.get::<_,i64>(0)
+    ).unwrap_or(0)
+}
+
 #[tauri::command]
-pub fn export_boletim_pdf(aluno_id: i64, path: String) -> Result<(), String> {
+pub fn export_boletim_pdf(aluno_id: i64, ano_letivo: String, path: String) -> Result<(), String> {
     let conn = get_conn().map_err(|e| e.to_string())?;
 
-    let aluno_nome: String = conn.query_row(
-        "SELECT nome FROM alunos WHERE id=?1",
-        params![aluno_id],
-        |r| r.get(0),
+    // Student info
+    struct AlunoInfo { nome: String, matricula: String, turma_id: Option<i64>, turma_nome: Option<String>, turno: Option<String> }
+    let aluno = conn.query_row(
+        "SELECT a.nome, COALESCE(a.matricula,''), a.turma_id, t.nome, t.turno
+         FROM alunos a LEFT JOIN turmas t ON t.id=a.turma_id WHERE a.id=?1",
+        rusqlite::params![aluno_id],
+        |r| Ok(AlunoInfo { nome: r.get(0)?, matricula: r.get(1)?, turma_id: r.get(2)?, turma_nome: r.get(3)?, turno: r.get(4)? }),
     ).map_err(|e| e.to_string())?;
 
-    let (nome_escola, nota_minima, fonte, tamanho_fonte): (String, f64, String, i64) = conn.query_row(
-        "SELECT COALESCE(nome_escola,''), COALESCE(nota_minima,5.0), COALESCE(fonte,'New Computer Modern'), COALESCE(tamanho_fonte,11) FROM configuracoes WHERE id=1",
-        [],
-        |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
-    ).unwrap_or_else(|_| (String::new(), 5.0, "New Computer Modern".into(), 11));
+    // School config
+    let (nome_escola, logo_path, cidade, estado, diretor, nota_minima, fonte, tamanho_fonte, ano_letivo_cfg): (String,String,String,String,String,f64,String,i64,String) = conn.query_row(
+        "SELECT COALESCE(nome_escola,''), COALESCE(logo_path,''), COALESCE(cidade,''), COALESCE(estado,''), COALESCE(diretor,''), COALESCE(nota_minima,5.0), COALESCE(fonte,'New Computer Modern'), COALESCE(tamanho_fonte,11), COALESCE(ano_letivo,'') FROM configuracoes WHERE id=1",
+        [], |r| Ok((r.get(0)?,r.get(1)?,r.get(2)?,r.get(3)?,r.get(4)?,r.get(5)?,r.get(6)?,r.get(7)?,r.get(8)?))
+    ).unwrap_or_else(|_| (String::new(),String::new(),String::new(),String::new(),String::new(),5.0,"New Computer Modern".into(),11,String::new()));
+    let ano_exibir = if !ano_letivo.is_empty() { ano_letivo.clone() } else { ano_letivo_cfg.clone() };
 
-    let mut stmt = conn.prepare(
-        "SELECT n.valor, COALESCE(p.titulo, n.descricao), COALESCE(p.valor_total, 1.0),
-                COALESCE(m.id, -1), COALESCE(m.nome, 'Sem matéria')
-         FROM notas n
-         LEFT JOIN provas p ON p.id = n.prova_id
-         LEFT JOIN materias m ON m.id = p.materia_id
-         WHERE n.aluno_id = ?1
-         ORDER BY m.nome, n.id",
-    ).map_err(|e| e.to_string())?;
-
-    struct NotaRow { valor: f64, titulo: String, peso: f64, materia_id: i64, materia_nome: String }
-    let rows: Vec<NotaRow> = stmt.query_map(params![aluno_id], |r| {
-        Ok(NotaRow { valor: r.get(0)?, titulo: r.get(1)?, peso: r.get(2)?, materia_id: r.get(3)?, materia_nome: r.get(4)? })
-    }).map_err(|e| e.to_string())?
-    .collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())?;
-
-    struct GrupoMateria { nome: String, materia_id: i64, notas: Vec<(String, f64, f64)> }
-    let mut grupos: Vec<GrupoMateria> = Vec::new();
-    for row in &rows {
-        if let Some(g) = grupos.iter_mut().find(|g| g.nome == row.materia_nome) {
-            g.notas.push((row.titulo.clone(), row.valor, row.peso));
-        } else {
-            grupos.push(GrupoMateria { nome: row.materia_nome.clone(), materia_id: row.materia_id, notas: vec![(row.titulo.clone(), row.valor, row.peso)] });
-        }
+    // Get all materias for this student (from notas + turma + aluno_materias)
+    let mut materias_ids: Vec<(i64,String)> = Vec::new();
+    // From aluno_materias
+    {
+        let mut s = conn.prepare("SELECT m.id, m.nome FROM aluno_materias am JOIN materias m ON m.id=am.materia_id WHERE am.aluno_id=?1 ORDER BY m.nome").map_err(|e| e.to_string())?;
+        let rows: Vec<(i64,String)> = s.query_map(rusqlite::params![aluno_id], |r| Ok((r.get(0)?,r.get(1)?))).map_err(|e| e.to_string())?
+            .filter_map(|r| r.ok()).collect();
+        for r in rows { if !materias_ids.iter().any(|(id,_)| *id == r.0) { materias_ids.push(r); } }
     }
+    // From turma_materias
+    if let Some(turma_id) = aluno.turma_id {
+        let mut s = conn.prepare("SELECT m.id, m.nome FROM turma_materias tm JOIN materias m ON m.id=tm.materia_id WHERE tm.turma_id=?1 ORDER BY m.nome").map_err(|e| e.to_string())?;
+        let rows: Vec<(i64,String)> = s.query_map(rusqlite::params![turma_id], |r| Ok((r.get(0)?,r.get(1)?))).map_err(|e| e.to_string())?
+            .filter_map(|r| r.ok()).collect();
+        for r in rows { if !materias_ids.iter().any(|(id,_)| *id == r.0) { materias_ids.push(r); } }
+    }
+    // From notas/provas
+    {
+        let filter_ano_val: Option<&str> = if ano_letivo.is_empty() { None } else { Some(&ano_letivo) };
+        let mut s = conn.prepare(
+            "SELECT DISTINCT m.id, m.nome FROM notas n JOIN provas p ON p.id=n.prova_id JOIN materias m ON m.id=p.materia_id WHERE n.aluno_id=?1 AND (?2 IS NULL OR p.ano_letivo=?2) ORDER BY m.nome"
+        ).map_err(|e| e.to_string())?;
+        let rows: Vec<(i64,String)> = s.query_map(rusqlite::params![aluno_id, filter_ano_val], |r| Ok((r.get(0)?,r.get(1)?))).map_err(|e| e.to_string())?
+            .filter_map(|r| r.ok()).collect();
+        for r in rows { if !materias_ids.iter().any(|(id,_)| *id == r.0) { materias_ids.push(r); } }
+    }
+    materias_ids.sort_by(|a,b| a.1.cmp(&b.1));
 
+    // Logo
+    let logo_ext = std::path::Path::new(&logo_path).extension().and_then(|e| e.to_str()).unwrap_or("png").to_string();
+    let mut all_images: HashMap<String, Bytes> = HashMap::new();
+    let has_logo = if !logo_path.is_empty() {
+        if let Ok(logo_bytes) = fs::read(&logo_path) {
+            all_images.insert(format!("logo_escola.{}", logo_ext), Bytes::new(logo_bytes));
+            true
+        } else { false }
+    } else { false };
+
+    // Build Typst source
     let mut src = String::new();
-    src.push_str(&format!("#set page(paper: \"a4\", margin: 2cm, numbering: \"1\")\n"));
+    src.push_str("#set page(paper: \"a4\", flipped: true, margin: 14mm, numbering: \"1\")\n");
     src.push_str(&format!("#set text(font: \"{}\", size: {}pt)\n", fonte, tamanho_fonte));
-    src.push_str("#set par(leading: 0.65em)\n\n");
+    src.push_str("#set par(leading: 0.5em)\n\n");
+
+    // Header block
+    let mut header_fields = String::new();
     if !nome_escola.is_empty() {
-        src.push_str(&format!("#align(center)[#text(size: 14pt, weight: \"bold\")[{}]]\n", escape_typst(&nome_escola)));
+        header_fields.push_str(&format!("#text(size: 13pt, weight: \"bold\")[{}]\n\n", escape_typst(&nome_escola.to_uppercase())));
     }
-    src.push_str("#align(center)[#text(size: 15pt, weight: \"bold\")[BOLETIM ESCOLAR]]\n");
-    src.push_str(&format!("#align(center)[#text(size: 12pt)[Aluno(a): #strong[{}]]]\n", escape_typst(&aluno_nome)));
-    src.push_str("\n#line(length: 100%)\n\n");
-
-    src.push_str("#table(\n  columns: (2fr, 3fr, 1.2fr, 1.5fr),\n");
-    src.push_str("  table.header()[#strong[Matéria]], table.header()[#strong[Provas e Notas]], table.header()[#strong[Média]], table.header()[#strong[Situação]],\n");
-
-    for g in &grupos {
-        let mut provas_str = String::new();
-        for (titulo, valor, _peso) in &g.notas {
-            if !provas_str.is_empty() { provas_str.push_str(" | "); }
-            provas_str.push_str(&format!("{}: {:.1}", escape_typst(titulo), valor));
-        }
-        let media = if g.materia_id > 0 {
-            get_nota_efetiva(&conn, aluno_id, g.materia_id)
-        } else {
-            let peso_total: f64 = g.notas.iter().map(|(_, _, p)| p).sum();
-            let pond_total: f64 = g.notas.iter().map(|(_, v, p)| v * p).sum();
-            if peso_total > 0.0 { pond_total / peso_total } else { 0.0 }
-        };
-        let situacao = if media >= nota_minima + 2.0 {
-            "Aprovado"
-        } else if media >= nota_minima {
-            "Em Recup."
-        } else {
-            "Reprovado"
-        };
+    header_fields.push_str("#text(size: 11pt, weight: \"bold\")[BOLETIM ESCOLAR]\n\n");
+    let cidade_estado = match (!cidade.is_empty(), !estado.is_empty()) {
+        (true, true) => format!("{} — {}", escape_typst(&cidade), escape_typst(&estado)),
+        (true, false) => escape_typst(&cidade).to_string(),
+        (false, true) => escape_typst(&estado).to_string(),
+        _ => String::new(),
+    };
+    if !cidade_estado.is_empty() {
+        header_fields.push_str(&format!("{}\n\n", cidade_estado));
+    }
+    if !diretor.is_empty() {
+        header_fields.push_str(&format!("Diretor(a): {}\n\n", escape_typst(&diretor)));
+    }
+    if has_logo {
         src.push_str(&format!(
-            "  [{}], [{}], [#strong[{:.2}]], [{}],\n",
-            escape_typst(&g.nome), provas_str, media, situacao
+            "#block(width: 100%, stroke: 0.5pt + luma(180), inset: 6pt)[\n\
+             #grid(columns: (2fr, 8fr), gutter: 6pt,\n  \
+             align(horizon + center)[#image(\"logo_escola.{}\", width: 100%)],\n  \
+             [{}]\n)\n]\n",
+            logo_ext, header_fields
+        ));
+    } else {
+        src.push_str(&format!(
+            "#block(width: 100%, stroke: 0.5pt + luma(180), inset: 6pt)[\n{}\n]\n",
+            header_fields
         ));
     }
-    src.push_str(")\n");
 
-    let world = ExamWorld::new(src);
+    src.push_str("#v(3mm)\n");
+
+    // Student info block
+    let turma_nome = aluno.turma_nome.as_deref().unwrap_or("");
+    let turno_nome = aluno.turno.as_deref().unwrap_or("");
+    src.push_str(&format!(
+        "#block(width: 100%, stroke: 0.4pt + luma(200), inset: 5pt)[\n\
+         #grid(columns: (3fr, 1.5fr, 1fr, 1fr), gutter: 4pt,\n  \
+         [*Aluno(a):* {}],\n  \
+         [*RA:* {}],\n  \
+         [*Turma:* {}],\n  \
+         [*Turno:* {}]\n)\n]\n",
+        escape_typst(&aluno.nome),
+        if aluno.matricula.is_empty() { "—".to_string() } else { escape_typst(&aluno.matricula).to_string() },
+        if turma_nome.is_empty() { "—".to_string() } else { escape_typst(turma_nome).to_string() },
+        if turno_nome.is_empty() { "—".to_string() } else { escape_typst(turno_nome).to_string() }
+    ));
+
+    src.push_str("#v(3mm)\n");
+    src.push_str(&format!("#align(right)[Ano letivo: *{}*]\n", escape_typst(&ano_exibir)));
+    src.push_str("#v(2mm)\n");
+
+    // Grades table
+    src.push_str("#set text(size: 9pt)\n");
+    src.push_str("#table(\n");
+    src.push_str("  columns: (3.5fr, 1fr, 0.8fr, 1fr, 0.8fr, 1fr, 0.8fr, 1fr, 0.8fr, 1.2fr, 0.8fr, 1.5fr),\n");
+    src.push_str("  stroke: 0.4pt,\n");
+    src.push_str("  align: (left, center, center, center, center, center, center, center, center, center, center, center),\n");
+    src.push_str("  table.header(\n");
+    src.push_str("    table.cell(rowspan: 2)[*Disciplina*],\n");
+    src.push_str("    table.cell(colspan: 2)[*1º Bimestre*],\n");
+    src.push_str("    table.cell(colspan: 2)[*2º Bimestre*],\n");
+    src.push_str("    table.cell(colspan: 2)[*3º Bimestre*],\n");
+    src.push_str("    table.cell(colspan: 2)[*4º Bimestre*],\n");
+    src.push_str("    table.cell(rowspan: 2)[*Média Final*],\n");
+    src.push_str("    table.cell(rowspan: 2)[*Faltas*],\n");
+    src.push_str("    table.cell(rowspan: 2)[*Situação*],\n");
+    src.push_str("    [N], [F], [N], [F], [N], [F], [N], [F],\n");
+    src.push_str("  ),\n");
+
+    let mut total_faltas: i64 = 0;
+    let mut approved = 0i64;
+    let mut rows_count = 0i64;
+
+    for (mat_id, mat_nome) in &materias_ids {
+        let notas: Vec<Option<f64>> = (1..=4).map(|b| get_nota_bimestre(&conn, aluno_id, *mat_id, b, &ano_letivo)).collect();
+        let faltas: Vec<i64> = (1..=4).map(|b| get_faltas_bimestre_materia(&conn, aluno_id, *mat_id, b)).collect();
+        let falta_total: i64 = faltas.iter().sum();
+        total_faltas += falta_total;
+
+        // Final average: average of bimestres that have grades
+        let notas_validas: Vec<f64> = notas.iter().filter_map(|n| *n).collect();
+        let media_final = if notas_validas.is_empty() { None }
+            else { Some(notas_validas.iter().sum::<f64>() / notas_validas.len() as f64) };
+
+        let situacao = match media_final {
+            Some(m) if m >= nota_minima => { approved += 1; "Aprovado(a)" },
+            Some(_) => "Em recuperação",
+            None => "—",
+        };
+        rows_count += 1;
+
+        let nota_fmt = |n: &Option<f64>| match n {
+            Some(v) => format!("{:.1}", v),
+            None => "—".to_string(),
+        };
+
+        src.push_str(&format!(
+            "  [{}], [{}], [{}], [{}], [{}], [{}], [{}], [{}], [{}], [{}], [{}], [{}],\n",
+            escape_typst(mat_nome),
+            nota_fmt(&notas[0]), faltas[0],
+            nota_fmt(&notas[1]), faltas[1],
+            nota_fmt(&notas[2]), faltas[2],
+            nota_fmt(&notas[3]), faltas[3],
+            match media_final { Some(m) => format!("{:.2}", m), None => "—".to_string() },
+            falta_total,
+            situacao,
+        ));
+    }
+
+    if materias_ids.is_empty() {
+        src.push_str("  table.cell(colspan: 12)[_Nenhum lançamento encontrado_],\n");
+    }
+
+    src.push_str(")\n");
+    src.push_str("#v(4mm)\n");
+
+    // Final result
+    let media_geral = if rows_count > 0 {
+        let soma: f64 = materias_ids.iter().map(|(mat_id, _)| {
+            let notas: Vec<f64> = (1..=4).filter_map(|b| get_nota_bimestre(&conn, aluno_id, *mat_id, b, &ano_letivo)).collect();
+            if notas.is_empty() { 0.0 } else { notas.iter().sum::<f64>() / notas.len() as f64 }
+        }).sum();
+        soma / rows_count as f64
+    } else { 0.0 };
+
+    let resultado = if rows_count == 0 {
+        "—"
+    } else if approved == rows_count {
+        "Aprovado(a)"
+    } else {
+        "Em recuperação / Reprovado(a)"
+    };
+
+    src.push_str(&format!(
+        "#block(width: 100%, stroke: 0.5pt + luma(180), inset: 6pt)[\n\
+         #grid(columns: (1fr, 1fr, 1fr), gutter: 4pt,\n  \
+         [*Resultado Final:* {}],\n  \
+         [*Média geral:* {:.2}],\n  \
+         [*Total de faltas:* {}]\n)\n]\n",
+        resultado,
+        media_geral,
+        total_faltas
+    ));
+
+    src.push_str("#v(3mm)\n");
+    src.push_str("#set text(size: 8pt)\n");
+    src.push_str("#block(width: 100%, stroke: 0.3pt + luma(220), inset: 4pt)[\n");
+    src.push_str("*Siglas:* N = Nota do bimestre (média ponderada das provas) | F = Faltas | — = Sem lançamento\n");
+    src.push_str("]\n");
+
+    let world = ExamWorld::new_with_files(src, all_images);
     let result = typst::compile::<PagedDocument>(&world);
     let document = result.output.map_err(|errs| {
         errs.iter().map(|e| e.message.to_string()).collect::<Vec<_>>().join("; ")

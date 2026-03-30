@@ -1,11 +1,11 @@
 "use client";
 import { useState, useEffect, useCallback, useMemo } from "react";
-import { MdAdd, MdEdit, MdDelete, MdCopyAll, MdViewModule, MdViewList } from "react-icons/md";
+import { MdAdd, MdEdit, MdDelete, MdCopyAll, MdViewModule, MdViewList, MdEventNote } from "react-icons/md";
 import { invokeCmd } from "@/utils/tauri";
 import Toast from "@/components/Toast";
 import Modal from "@/components/Modal";
 import { InputHora, InputMultiSelect } from "@/components/inputs";
-import type { Aula, Materia, Turma, Aluno, Configuracoes, ToastState } from "@/types";
+import type { Aula, Materia, Turma, Aluno, Configuracoes, ToastState, FaltaItem } from "@/types";
 
 interface AulaForm {
   materia_id: string;
@@ -61,6 +61,10 @@ export default function CronogramaPage() {
   const [copiarModal, setCopiarModal] = useState(false);
   const [semestreDestino, setSemestreDestino] = useState("");
   const [copiando, setCopiando] = useState(false);
+  const [presencaAulaId, setPresencaAulaId] = useState<number | null>(null);
+  const [presencaData, setPresencaData] = useState(new Date().toISOString().split("T")[0]);
+  const [presencaItems, setPresencaItems] = useState<FaltaItem[]>([]);
+  const [savingPresenca, setSavingPresenca] = useState(false);
 
   const load = useCallback(async () => {
     const [a, m, t, al, cfg] = await Promise.all([
@@ -149,6 +153,27 @@ export default function CronogramaPage() {
     }
   }
 
+  async function openPresenca(aulaId: number) {
+    setPresencaAulaId(aulaId);
+    const items = await invokeCmd<FaltaItem[]>("get_faltas_aula", { aulaId, data: presencaData });
+    setPresencaItems(items);
+  }
+
+  async function savePresenca() {
+    if (presencaAulaId === null) return;
+    setSavingPresenca(true);
+    const faltaram = presencaItems.filter(i => i.faltou).map(i => i.aluno_id);
+    try {
+      await invokeCmd("save_faltas_aula", { aulaId: presencaAulaId, data: presencaData, faltaram });
+      notify("Frequência salva.");
+      setPresencaAulaId(null);
+    } catch (e) {
+      notify(String(e), "error");
+    } finally {
+      setSavingPresenca(false);
+    }
+  }
+
   return (
     <div>
       <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
@@ -179,7 +204,7 @@ export default function CronogramaPage() {
       </div>
 
       {modoGrade ? (
-        <GradeView aulas={aulasFiltradas} materias={materias} config={config} onEdit={openEdit} onCellClick={openFromCell} />
+        <GradeView aulas={aulasFiltradas} materias={materias} config={config} onEdit={openEdit} onCellClick={openFromCell} onFrequencia={openPresenca} />
       ) : (
         <ListaView aulas={aulasFiltradas} materias={materias} onEdit={openEdit} onDeleteRequest={id => setDeleteId(id)} />
       )}
@@ -255,12 +280,47 @@ export default function CronogramaPage() {
         </div>
       </Modal>
 
+      <Modal open={presencaAulaId !== null} onClose={() => setPresencaAulaId(null)} title="Lançar Frequência" size="md">
+        <fieldset className="fieldset">
+          <legend className="fieldset-legend">Data da aula</legend>
+          <input type="date" className="input w-full" value={presencaData} onChange={async e => {
+            setPresencaData(e.target.value);
+            if (presencaAulaId !== null) {
+              const items = await invokeCmd<FaltaItem[]>("get_faltas_aula", { aulaId: presencaAulaId, data: e.target.value });
+              setPresencaItems(items);
+            }
+          }} />
+        </fieldset>
+        {presencaItems.length === 0 && <p className="text-sm text-base-content/50 py-2">Nenhum aluno vinculado a esta aula.</p>}
+        {presencaItems.length > 0 && (
+          <div className="mt-2">
+            <div className="flex justify-between items-center mb-2">
+              <span className="text-sm font-medium">Marcar ausências:</span>
+              <button type="button" className="btn btn-xs btn-ghost" onClick={() => setPresencaItems(items => items.map(i => ({ ...i, faltou: true })))}>Todos ausentes</button>
+            </div>
+            <div className="max-h-64 overflow-y-auto flex flex-col gap-1">
+              {presencaItems.map(item => (
+                <label key={item.aluno_id} className={`flex items-center gap-2 cursor-pointer p-2 rounded hover:bg-base-200 ${item.faltou ? "bg-error/10" : ""}`}>
+                  <input type="checkbox" className="checkbox checkbox-sm checkbox-error" checked={item.faltou} onChange={e => setPresencaItems(items => items.map(i => i.aluno_id === item.aluno_id ? { ...i, faltou: e.target.checked } : i))} />
+                  <span className="text-sm">{item.aluno_nome}</span>
+                  {item.faltou && <span className="badge badge-error badge-xs ml-auto">Falta</span>}
+                </label>
+              ))}
+            </div>
+          </div>
+        )}
+        <div className="modal-action">
+          <button className="btn" onClick={() => setPresencaAulaId(null)}>Cancelar</button>
+          <button className="btn btn-primary" onClick={savePresenca} disabled={savingPresenca}>{savingPresenca ? "Salvando..." : "Salvar"}</button>
+        </div>
+      </Modal>
+
       {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
     </div>
   );
 }
 
-function GradeView({ aulas, materias, config, onEdit, onCellClick }: { aulas: Aula[]; materias: Materia[]; config: Configuracoes | null; onEdit: (a: Aula) => void; onCellClick: (dia: string, inicio: string, fim: string) => void }) {
+function GradeView({ aulas, materias, config, onEdit, onCellClick, onFrequencia }: { aulas: Aula[]; materias: Materia[]; config: Configuracoes | null; onEdit: (a: Aula) => void; onCellClick: (dia: string, inicio: string, fim: string) => void; onFrequencia: (aulaId: number) => void }) {
   const slots = useMemo(() => config ? getSlots(config) : [], [config]);
   const dias = useMemo(() => DIAS_SEMANA.slice(0, config?.dias_letivos_semana ?? 5), [config]);
   const todayIndex = new Date().getDay() - 1;
@@ -291,6 +351,7 @@ function GradeView({ aulas, materias, config, onEdit, onCellClick }: { aulas: Au
                       <div className="rounded text-xs text-white p-1 leading-tight" style={{ backgroundColor: mat?.cor ?? "#6366f1" }}>
                         <div className="font-semibold truncate">{mat?.nome ?? "–"}</div>
                         <div className="opacity-80 text-[10px]">{aula.hora_inicio}–{aula.hora_fim}</div>
+                        <button className="mt-0.5 opacity-70 hover:opacity-100 text-white" onClick={e => { e.stopPropagation(); onFrequencia(aula.id); }} title="Frequência"><MdEventNote size={12} /></button>
                       </div>
                     )}
                   </td>

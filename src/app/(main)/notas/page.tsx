@@ -1,6 +1,6 @@
 "use client";
 import { useState, useEffect, useCallback } from "react";
-import { MdAdd, MdEdit, MdDelete, MdPictureAsPdf, MdSettings } from "react-icons/md";
+import { MdAdd, MdEdit, MdDelete, MdPictureAsPdf, MdSettings, MdFileDownload, MdArticle } from "react-icons/md";
 import { invokeCmd } from "@/utils/tauri";
 import { save } from "@tauri-apps/plugin-dialog";
 import Toast from "@/components/Toast";
@@ -49,6 +49,12 @@ export default function NotasPage() {
   const [catForm, setCatForm] = useState<CatForm>(EMPTY_CAT);
   const [catEditing, setCatEditing] = useState<number | null>(null);
   const [deleteCatId, setDeleteCatId] = useState<number | null>(null);
+
+  const [boletimModal, setBoletimModal] = useState(false);
+  const [boletimAlunoId, setBoletimAlunoId] = useState("");
+  const [boletimTurmaId, setBoletimTurmaId] = useState("");
+  const [boletimAno, setBoletimAno] = useState("");
+  const [exportingBoletim, setExportingBoletim] = useState(false);
 
   const loadNotas = useCallback(async () => {
     const n = await invokeCmd<Nota[]>("list_notas", {
@@ -199,42 +205,17 @@ export default function NotasPage() {
     } catch (err) { notify(String(err), "error"); }
   }
 
-  const boletim = (() => {
-    if (!filterAlunoId) return null;
-    const alunoNotas = notas.filter(n => String(n.aluno_id) === filterAlunoId);
-    const groups = new Map<number | null, typeof alunoNotas>();
-    for (const n of alunoNotas) {
-      const mid = provas.find(p => p.id === n.prova_id)?.materia_id ?? null;
-      if (!groups.has(mid)) groups.set(mid, []);
-      groups.get(mid)!.push(n);
-    }
-    let totalPeso = 0, totalPond = 0;
-    const grupos = [...groups.entries()].map(([mid, ns]) => {
-      let peso = 0, pond = 0;
-      for (const n of ns) { const w = provas.find(p => p.id === n.prova_id)?.valor_total ?? 1; peso += w; pond += n.valor * w; }
-      totalPeso += peso; totalPond += pond;
-      return { nome: mid !== null ? (materias.find(m => m.id === mid)?.nome ?? "?") : "Sem matéria", media: peso ? pond / peso : 0 };
-    });
-    return { grupos, mediaGeral: totalPeso ? totalPond / totalPeso : 0 };
-  })();
-
   return (
     <div>
       <div className="flex items-center gap-3 mb-6 flex-wrap">
         <h1 className="text-3xl font-bold">Notas</h1>
         <div className="flex-1" />
-        {filterAlunoId && (
-          <button className="btn btn-outline gap-1" onClick={async () => {
-            const aluno = alunos.find(a => String(a.id) === filterAlunoId);
-            const nome = (aluno?.nome ?? "aluno").replace(/[^\w\s]/g, "").trim().replace(/\s+/g, "_");
-            const filePath = await save({ defaultPath: `boletim_${nome}.pdf`, filters: [{ name: "PDF", extensions: ["pdf"] }] });
-            if (!filePath) return;
-            try {
-              await invokeCmd("export_boletim_pdf", { alunoId: Number(filterAlunoId), path: filePath });
-              notify("Boletim exportado com sucesso.");
-            } catch (e) { notify(`Erro ao exportar: ${e}`, "error"); }
-          }}><MdPictureAsPdf size={18} /> Exportar Boletim</button>
-        )}
+        <button className="btn btn-outline gap-1" onClick={() => {
+          setBoletimAlunoId("");
+          setBoletimTurmaId("");
+          setBoletimAno(config?.ano_letivo ?? "");
+          setBoletimModal(true);
+        }}><MdArticle size={18} /> Gerar Boletim</button>
         <button className="btn btn-primary" onClick={openCreate}><MdAdd size={20} /> Lançar Nota</button>
       </div>
 
@@ -315,24 +296,6 @@ export default function NotasPage() {
         </table>
       </div>
 
-      {boletim && (
-        <div className="mt-8">
-          <h2 className="text-xl font-bold mb-4">Boletim</h2>
-          <div className="overflow-x-auto">
-            <table className="table table-zebra w-full">
-              <thead><tr><th>Matéria</th><th>Média Ponderada</th></tr></thead>
-              <tbody>
-                {boletim.grupos.map(g => (
-                  <tr key={g.nome}><td>{g.nome}</td><td>{g.media.toFixed(2)}</td></tr>
-                ))}
-              </tbody>
-              <tfoot>
-                <tr><td className="font-bold">Média Geral</td><td className="font-bold">{boletim.mediaGeral.toFixed(2)}</td></tr>
-              </tfoot>
-            </table>
-          </div>
-        </div>
-      )}
 
       <Modal open={modal} onClose={() => setModal(false)} title={editing !== null ? "Editar Nota" : "Lançar Nota"} size="lg">
         <form onSubmit={handleSubmit} className="flex flex-col gap-4">
@@ -449,6 +412,76 @@ export default function NotasPage() {
 
       <Modal open={deleteCatId !== null} onClose={() => setDeleteCatId(null)} title="Excluir Categoria" variant="confirm" color="error" confirmLabel="Excluir" onConfirm={() => deleteCatId !== null && handleDeleteCat(deleteCatId)}>
         Deseja realmente excluir esta categoria? Esta ação não pode ser desfeita.
+      </Modal>
+
+      <Modal open={boletimModal} onClose={() => setBoletimModal(false)} title="Gerar Boletim" size="md">
+        <div className="flex flex-col gap-4">
+          <p className="text-sm text-base-content/60">Selecione o aluno e o ano letivo para gerar o boletim completo com notas dos 4 bimestres.</p>
+          {config?.usar_turmas && (
+            <fieldset className="fieldset">
+              <legend className="fieldset-legend">Turma</legend>
+              <select className="select w-full" value={boletimTurmaId} onChange={e => { setBoletimTurmaId(e.target.value); setBoletimAlunoId(""); }}>
+                <option value="">Todas as turmas</option>
+                {turmas.map(t => <option key={t.id} value={t.id}>{t.nome}</option>)}
+              </select>
+            </fieldset>
+          )}
+          <fieldset className="fieldset">
+            <legend className="fieldset-legend">Aluno</legend>
+            <select className="select w-full" value={boletimAlunoId} onChange={e => setBoletimAlunoId(e.target.value)}>
+              <option value="">Selecione o aluno</option>
+              {(boletimTurmaId ? alunos.filter(a => a.turma_id === Number(boletimTurmaId)) : alunos)
+                .map(a => <option key={a.id} value={a.id}>{a.nome}</option>)}
+            </select>
+          </fieldset>
+          <fieldset className="fieldset">
+            <legend className="fieldset-legend">Ano letivo</legend>
+            <select className="select w-full" value={boletimAno} onChange={e => setBoletimAno(e.target.value)}>
+              <option value="">Todos os anos</option>
+              {anosDisponiveis.map(a => <option key={a} value={a}>{a}</option>)}
+            </select>
+          </fieldset>
+          <div className="divider my-0" />
+          <div className="flex gap-2">
+            <button
+              className="btn btn-outline flex-1 gap-1"
+              disabled={!boletimAlunoId || exportingBoletim}
+              onClick={async () => {
+                const aluno = alunos.find(a => String(a.id) === boletimAlunoId);
+                const nome = (aluno?.nome ?? "aluno").replace(/[^\w\s]/g, "").trim().replace(/\s+/g, "_");
+                const filePath = await save({ defaultPath: `boletim_${nome}.pdf`, filters: [{ name: "PDF", extensions: ["pdf"] }] });
+                if (!filePath) return;
+                setExportingBoletim(true);
+                try {
+                  await invokeCmd("export_boletim_pdf", { alunoId: Number(boletimAlunoId), anoLetivo: boletimAno, path: filePath });
+                  notify("Boletim PDF exportado com sucesso.");
+                  setBoletimModal(false);
+                } catch (e) { notify(`Erro ao exportar: ${e}`, "error"); }
+                finally { setExportingBoletim(false); }
+              }}
+            ><MdPictureAsPdf size={18} /> {exportingBoletim ? "Exportando…" : "Exportar PDF"}</button>
+            <button
+              className="btn btn-outline flex-1 gap-1"
+              disabled={!boletimAlunoId || exportingBoletim}
+              onClick={async () => {
+                const aluno = alunos.find(a => String(a.id) === boletimAlunoId);
+                const nome = (aluno?.nome ?? "aluno").replace(/[^\w\s]/g, "").trim().replace(/\s+/g, "_");
+                const filePath = await save({ defaultPath: `boletim_${nome}.docx`, filters: [{ name: "Word", extensions: ["docx"] }] });
+                if (!filePath) return;
+                setExportingBoletim(true);
+                try {
+                  await invokeCmd("export_boletim_word", { alunoId: Number(boletimAlunoId), anoLetivo: boletimAno, path: filePath });
+                  notify("Boletim Word exportado com sucesso.");
+                  setBoletimModal(false);
+                } catch (e) { notify(`Erro ao exportar: ${e}`, "error"); }
+                finally { setExportingBoletim(false); }
+              }}
+            ><MdFileDownload size={18} /> {exportingBoletim ? "Exportando…" : "Exportar Word"}</button>
+          </div>
+          <div className="modal-action mt-0">
+            <button className="btn" onClick={() => setBoletimModal(false)}>Fechar</button>
+          </div>
+        </div>
       </Modal>
 
       {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}

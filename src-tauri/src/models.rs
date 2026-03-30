@@ -191,3 +191,18 @@ pub struct Aula {
     pub bimestre: i64,
 }
 
+#[derive(Serialize, Deserialize, Clone)]
+pub struct FaltaItem {
+    pub aluno_id: i64,
+    pub aluno_nome: String,
+    pub faltou: bool,
+}
+
+#[derive(Serialize, Deserialize, Clone)]
+pub struct FaltasPorMateria {
+    pub materia_id: i64,
+    pub materia_nome: String,
+    pub bimestre: i64,
+    pub faltas: i64,
+}
+

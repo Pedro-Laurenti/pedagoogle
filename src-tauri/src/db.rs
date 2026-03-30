@@ -167,6 +167,7 @@ const MIGRATIONS: &[(u32, &str)] = &[
     (66, "ALTER TABLE questoes ADD COLUMN espaco_rascunho INTEGER NOT NULL DEFAULT 0"),
     (67, "ALTER TABLE questoes_atividade ADD COLUMN espaco_rascunho INTEGER NOT NULL DEFAULT 0"),
     (68, "ALTER TABLE configuracoes ADD COLUMN estado TEXT NOT NULL DEFAULT ''"),
+    (69, "CREATE TABLE IF NOT EXISTS faltas (id INTEGER PRIMARY KEY AUTOINCREMENT, aluno_id INTEGER NOT NULL REFERENCES alunos(id) ON DELETE CASCADE, aula_id INTEGER NOT NULL REFERENCES aulas(id) ON DELETE CASCADE, data TEXT NOT NULL, UNIQUE(aluno_id, aula_id, data))"),
 ];
 
 fn run_migrations(conn: &Connection) -> Result<()> {
